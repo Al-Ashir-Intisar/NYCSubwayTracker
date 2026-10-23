@@ -51,26 +51,69 @@ h2 {
   font-size: 15px;
 }
 
-.settings-link {
-  color: #fff;
-  font-size: 12px;
-  text-decoration-color: #a6d9c9;
-  text-underline-offset: 3px;
-}
-
 main {
   padding: 14px 16px 18px;
 }
 
 .selector {
-  display: grid;
-  gap: 7px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
 
-.selector h2 {
-  margin-bottom: 2px;
+.selector-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.selector-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.selector-title,
+.selector-caption {
+  display: block;
+}
+
+.selector-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.selector-caption {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.toggle-mark {
+  display: grid;
+  flex: 0 0 27px;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--accent-dark);
+}
+
+.toggle-mark::before {
+  content: "+";
+  font-size: 18px;
+  line-height: 1;
+}
+
+.selector[open] .toggle-mark::before {
+  content: "-";
+}
+
+.selector-body {
+  display: grid;
+  gap: 7px;
+  padding-top: 8px;
 }
 
 label {
@@ -79,11 +122,10 @@ label {
   font-weight: 700;
 }
 
-input,
-select {
+.picker input {
   width: 100%;
-  min-height: 34px;
-  padding: 6px 9px;
+  min-height: 38px;
+  padding: 7px 10px;
   border: 1px solid #bac4bd;
   border-radius: 3px;
   background: var(--surface);
@@ -92,12 +134,57 @@ select {
   font-size: 13px;
 }
 
-input:focus,
-select:focus,
+.picker input:focus,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.picker {
+  position: relative;
+}
+
+.picker-options {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 3px);
+  right: 0;
+  left: 0;
+  max-height: 190px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: 0 5px 14px rgb(27 37 36 / 14%);
+  list-style: none;
+}
+
+.picker-options[hidden] {
+  display: none;
+}
+
+.picker-option {
+  padding: 8px;
+  border-radius: 2px;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.picker-option:hover,
+.picker-option[aria-selected="true"] {
+  background: #e8f2ed;
+  color: var(--accent-dark);
+}
+
+.picker-empty {
+  padding: 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 button {

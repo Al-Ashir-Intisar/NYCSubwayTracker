@@ -12,21 +12,32 @@
         <p class="eyebrow">MTA REALTIME</p>
         <h1>Subway tracker</h1>
       </div>
-      <a class="settings-link" href="options.html" target="_blank" aria-label="Open settings" title="Settings">Settings</a>
     </header>
 
     <main>
-      <section class="selector" aria-labelledby="add-heading">
-        <h2 id="add-heading">Track a stop</h2>
-        <label for="station-search">Find a station</label>
-        <input id="station-search" type="search" placeholder="Search station names" autocomplete="off">
-        <label for="station-select">Station</label>
-        <select id="station-select"></select>
-        <label for="route-select">Route</label>
-        <select id="route-select"></select>
-        <button id="add-button" class="primary-button" type="button">Add stop</button>
-        <p id="load-status" class="status" role="status">Loading subway data...</p>
-      </section>
+      <details id="selector-panel" class="selector" open>
+        <summary class="selector-toggle">
+          <span>
+            <span id="add-heading" class="selector-title">Track a stop</span>
+            <span class="selector-caption">Choose a station and route</span>
+          </span>
+          <span class="toggle-mark" aria-hidden="true"></span>
+        </summary>
+        <div class="selector-body">
+          <label for="station-input">Station</label>
+          <div class="picker">
+            <input id="station-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="station-options" placeholder="Search stations" autocomplete="off">
+            <ul id="station-options" class="picker-options" role="listbox" hidden></ul>
+          </div>
+          <label for="route-input">Route</label>
+          <div class="picker">
+            <input id="route-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="route-options" placeholder="Search routes" autocomplete="off">
+            <ul id="route-options" class="picker-options" role="listbox" hidden></ul>
+          </div>
+          <button id="add-button" class="primary-button" type="button">Add stop</button>
+          <p id="load-status" class="status" role="status">Loading subway data...</p>
+        </div>
+      </details>
 
       <section class="tracked" aria-labelledby="tracked-heading">
         <div class="section-heading">

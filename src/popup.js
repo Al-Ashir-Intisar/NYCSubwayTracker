@@ -15,9 +15,10 @@ const ROUTE_FEED_GROUP = {
   SI: 'SI', SIR: 'SI'
 };
 
-const stationSearch = document.querySelector('#station-search');
-const stationSelect = document.querySelector('#station-select');
-const routeSelect = document.querySelector('#route-select');
+const stationInput = document.querySelector('#station-input');
+const stationOptions = document.querySelector('#station-options');
+const routeInput = document.querySelector('#route-input');
+const routeOptions = document.querySelector('#route-options');
 const addButton = document.querySelector('#add-button');
 const refreshButton = document.querySelector('#refresh-button');
 const loadStatus = document.querySelector('#load-status');
@@ -29,6 +30,8 @@ let stopsByStation = new Map();
 let routesById = new Map();
 let feedUrlsByGroup = new Map();
 let favorites = [];
+let stationLabels = new Map();
+let stationById = new Map();
 
 function parseCsv(text) {
   const rows = [];
@@ -94,6 +97,17 @@ async function loadData() {
 
   stations = [...new Map(rootStops.map((stop) => [stop.stop_id, stop])).values()]
     .sort((left, right) => left.stop_name.localeCompare(right.stop_name));
+  stationById = new Map(stations.map((station) => [station.stop_id, station]));
+  const stationNameCounts = new Map();
+  for (const station of stations) {
+    stationNameCounts.set(station.stop_name, (stationNameCounts.get(station.stop_name) || 0) + 1);
+  }
+  stationLabels = new Map(stations.map((station) => [
+    station.stop_id,
+    stationNameCounts.get(station.stop_name) > 1
+      ? `${station.stop_name} · ${station.stop_id}`
+      : station.stop_name
+  ]));
   stopsByStation = new Map(stations.map((station) => [station.stop_id, new Set([station.stop_id])]));
   for (const stop of stops) {
     if (stop.parent_station && stopsByStation.has(stop.parent_station)) {
@@ -118,43 +132,94 @@ async function loadData() {
     })
     .filter(Boolean));
 
-  populateStationSelect();
-  populateRouteSelect();
+  attachPicker(stationInput, stationOptions, stations, (station) => stationLabels.get(station.stop_id), (station) => station.stop_id);
+  attachPicker(routeInput, routeOptions, [...routesById.values()], (route) => `${route.route_short_name} · ${route.route_long_name}`, (route) => route.route_id);
   loadStatus.textContent = `${stations.length.toLocaleString()} stations loaded.`;
 }
 
-function populateStationSelect() {
-  const search = stationSearch.value.trim().toLocaleLowerCase();
-  const previousValue = stationSelect.value;
-  const filteredStations = stations.filter((station) => station.stop_name.toLocaleLowerCase().includes(search));
-  stationSelect.replaceChildren();
+function attachPicker(input, list, items, labelFor, idFor) {
+  let matches = [];
+  let activeIndex = -1;
 
-  for (const station of filteredStations) {
-    const option = document.createElement('option');
-    option.value = station.stop_id;
-    option.textContent = station.stop_name;
-    stationSelect.append(option);
+  function close() {
+    list.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+    activeIndex = -1;
   }
 
-  if (filteredStations.some((station) => station.stop_id === previousValue)) {
-    stationSelect.value = previousValue;
+  function choose(item) {
+    input.value = labelFor(item);
+    input.dataset.selectedId = idFor(item);
+    close();
   }
-}
 
-function populateRouteSelect() {
-  routeSelect.replaceChildren();
-  const routes = [...routesById.values()].sort((left, right) => {
-    const leftOrder = Number(left.route_sort_order) || 0;
-    const rightOrder = Number(right.route_sort_order) || 0;
-    return leftOrder - rightOrder || left.route_short_name.localeCompare(right.route_short_name);
+  function render() {
+    const query = input.value.trim().toLocaleLowerCase();
+    matches = items.filter((item) => labelFor(item).toLocaleLowerCase().includes(query)).slice(0, 12);
+    list.replaceChildren();
+    activeIndex = -1;
+    input.removeAttribute('aria-activedescendant');
+
+    if (!matches.length) {
+      const empty = document.createElement('li');
+      empty.className = 'picker-empty';
+      empty.textContent = 'No matches';
+      list.append(empty);
+    } else {
+      matches.forEach((item, index) => {
+        const option = document.createElement('li');
+        option.id = `${list.id}-option-${index}`;
+        option.className = 'picker-option';
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', 'false');
+        option.textContent = labelFor(item);
+        option.addEventListener('mousedown', (event) => event.preventDefault());
+        option.addEventListener('click', () => choose(item));
+        list.append(option);
+      });
+    }
+
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  }
+
+  function setActive(index) {
+    if (!matches.length) return;
+    activeIndex = (index + matches.length) % matches.length;
+    const options = list.querySelectorAll('[role="option"]');
+    options.forEach((option, optionIndex) => {
+      const active = optionIndex === activeIndex;
+      option.setAttribute('aria-selected', String(active));
+      if (active) {
+        input.setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
+
+  input.addEventListener('focus', render);
+  input.addEventListener('input', () => {
+    delete input.dataset.selectedId;
+    render();
   });
-
-  for (const route of routes) {
-    const option = document.createElement('option');
-    option.value = route.route_id;
-    option.textContent = route.route_short_name;
-    routeSelect.append(option);
-  }
+  input.addEventListener('blur', () => window.setTimeout(close, 120));
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (list.hidden) render();
+      setActive(activeIndex + 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (list.hidden) render();
+      setActive(activeIndex < 0 ? matches.length - 1 : activeIndex - 1);
+    } else if (event.key === 'Enter' && !list.hidden && activeIndex >= 0) {
+      event.preventDefault();
+      choose(matches[activeIndex]);
+    } else if (event.key === 'Escape') {
+      close();
+    }
+  });
 }
 
 function routeColor(route) {
@@ -174,9 +239,12 @@ function canonicalRoute(routeId) {
 }
 
 function addFavorite() {
-  const station = stations.find((item) => item.stop_id === stationSelect.value);
-  const route = routesById.get(routeSelect.value);
-  if (!station || !route) return;
+  const station = stationById.get(stationInput.dataset.selectedId);
+  const route = routesById.get(routeInput.dataset.selectedId);
+  if (!station || !route) {
+    loadStatus.textContent = 'Choose a station and route from the search results.';
+    return;
+  }
 
   const id = `${station.stop_id}:${route.route_id}`;
   if (favorites.some((favorite) => favorite.id === id)) {
@@ -336,7 +404,6 @@ async function refreshArrivals() {
   }
 }
 
-stationSearch.addEventListener('input', populateStationSelect);
 addButton.addEventListener('click', addFavorite);
 refreshButton.addEventListener('click', refreshArrivals);
 
