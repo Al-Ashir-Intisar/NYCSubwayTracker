@@ -27,6 +27,7 @@ const emptyState = document.querySelector('#empty-state');
 
 let stations = [];
 let stopsByStation = new Map();
+let stationByStopId = new Map();
 let routesById = new Map();
 let feedUrlsByGroup = new Map();
 let favorites = [];
@@ -109,7 +110,11 @@ async function loadData() {
       : station.stop_name
   ]));
   stopsByStation = new Map(stations.map((station) => [station.stop_id, new Set([station.stop_id])]));
+  stationByStopId = new Map();
   for (const stop of stops) {
+    const stationId = stop.parent_station || stop.stop_id;
+    const station = stationById.get(stationId);
+    if (station) stationByStopId.set(stop.stop_id, station);
     if (stop.parent_station && stopsByStation.has(stop.parent_station)) {
       stopsByStation.get(stop.parent_station).add(stop.stop_id);
     }
@@ -315,6 +320,18 @@ function getEpochSeconds(value) {
   return Number(value);
 }
 
+function getTripDestination(update) {
+  const stopUpdates = update.stopTimeUpdate || [];
+  if (!stopUpdates.length) return 'Destination unavailable';
+
+  const terminal = stopUpdates.reduce((last, stopUpdate) => {
+    return Number(stopUpdate.stopSequence || 0) >= Number(last.stopSequence || 0)
+      ? stopUpdate
+      : last;
+  }, stopUpdates[0]);
+  return stationByStopId.get(terminal.stopId)?.stop_name || 'Destination unavailable';
+}
+
 async function fetchFeed(group, feedCache) {
   if (feedCache.has(group)) return feedCache.get(group);
   const url = feedUrlsByGroup.get(group);
@@ -341,19 +358,76 @@ function findArrivals(feed, favorite) {
     if (!update) continue;
     const tripRouteId = update.trip?.routeId;
     if (!tripRouteId || canonicalRoute(tripRouteId) !== selectedRouteId) continue;
+    const destination = getTripDestination(update);
 
     for (const stopUpdate of update.stopTimeUpdate || []) {
       if (!stationStopIds.has(stopUpdate.stopId)) continue;
       if (stopUpdate.scheduleRelationship === 1) continue;
       const epoch = getEpochSeconds(stopUpdate.arrival?.time ?? stopUpdate.departure?.time);
       if (!Number.isFinite(epoch) || epoch < now - 30 || epoch > now + 2 * 60 * 60) continue;
-      arrivals.push({ epoch, tripId: update.trip?.tripId || entity.id });
+      const direction = stopUpdate.stopId.endsWith('N')
+        ? 'N'
+        : stopUpdate.stopId.endsWith('S') ? 'S' : '';
+      arrivals.push({
+        epoch,
+        tripId: update.trip?.tripId || entity.id,
+        stopId: stopUpdate.stopId,
+        direction,
+        destination
+      });
     }
   }
 
   const uniqueArrivals = new Map();
-  for (const arrival of arrivals) uniqueArrivals.set(`${arrival.tripId}:${arrival.epoch}`, arrival);
-  return [...uniqueArrivals.values()].sort((left, right) => left.epoch - right.epoch).slice(0, 4);
+  for (const arrival of arrivals) {
+    uniqueArrivals.set(`${arrival.tripId}:${arrival.epoch}:${arrival.stopId}`, arrival);
+  }
+  return [...uniqueArrivals.values()].sort((left, right) => left.epoch - right.epoch);
+}
+
+function renderArrivalGroups(card, arrivals) {
+  const groups = new Map();
+  for (const arrival of arrivals) {
+    const key = `${arrival.direction}:${arrival.destination}`;
+    if (!groups.has(key)) groups.set(key, { direction: arrival.direction, destination: arrival.destination, arrivals: [] });
+    const group = groups.get(key);
+    if (group.arrivals.length < 3) group.arrivals.push(arrival);
+  }
+
+  for (const group of groups.values()) {
+    const section = document.createElement('section');
+    section.className = 'arrival-group';
+    section.dataset.direction = group.direction;
+
+    const heading = document.createElement('h4');
+    heading.className = 'arrival-destination';
+    const marker = document.createElement('span');
+    marker.className = 'direction-marker';
+    marker.textContent = group.direction || '?';
+    marker.setAttribute('aria-label', group.direction ? `${group.direction} direction` : 'Direction unavailable');
+    const destination = document.createElement('span');
+    destination.textContent = `To ${group.destination}`;
+    heading.append(marker, destination);
+    section.append(heading);
+
+    const list = document.createElement('ul');
+    list.className = 'arrival-list';
+    for (const arrival of group.arrivals) {
+      const minutes = Math.max(0, Math.round((arrival.epoch * 1000 - Date.now()) / 60_000));
+      const item = document.createElement('li');
+      item.className = 'arrival-time';
+      item.dataset.direction = group.direction;
+      const direction = document.createElement('span');
+      direction.className = 'arrival-direction';
+      direction.textContent = group.direction || '?';
+      const time = document.createElement('span');
+      time.textContent = minutes < 1 ? 'Due' : `${minutes} min`;
+      item.append(direction, time);
+      list.append(item);
+    }
+    section.append(list);
+    card.append(section);
+  }
 }
 
 async function refreshArrivals() {
@@ -366,7 +440,7 @@ async function refreshArrivals() {
       const card = [...favoritesContainer.children]
         .find((element) => element.dataset.favoriteId === favorite.id);
       if (!card) return;
-      card.querySelector('.arrival-status, .arrival-list')?.remove();
+      card.querySelector('.arrival-status, .arrival-groups')?.remove();
 
       const group = ROUTE_FEED_GROUP[favorite.routeId];
       if (!group) {
@@ -384,16 +458,10 @@ async function refreshArrivals() {
           return;
         }
 
-        const list = document.createElement('ul');
-        list.className = 'arrival-list';
-        for (const arrival of arrivals) {
-          const minutes = Math.max(0, Math.round((arrival.epoch * 1000 - Date.now()) / 60_000));
-          const item = document.createElement('li');
-          item.className = 'arrival-time';
-          item.textContent = minutes < 1 ? 'Due' : `${minutes} min`;
-          list.append(item);
-        }
-        card.append(list);
+        const groups = document.createElement('div');
+        groups.className = 'arrival-groups';
+        card.append(groups);
+        renderArrivalGroups(groups, arrivals);
       } catch (error) {
         card.querySelector('.arrival-status')?.remove();
         setArrivalStatus(card, error instanceof Error ? error.message : 'Unable to load arrivals.');
