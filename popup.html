@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NYC Subway Tracker</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">MTA REALTIME</p>
+        <h1>Subway tracker</h1>
+      </div>
+      <a class="settings-link" href="options.html" target="_blank" aria-label="Open settings" title="Settings">Settings</a>
+    </header>
+
+    <main>
+      <section class="selector" aria-labelledby="add-heading">
+        <h2 id="add-heading">Track a stop</h2>
+        <label for="station-search">Find a station</label>
+        <input id="station-search" type="search" placeholder="Search station names" autocomplete="off">
+        <label for="station-select">Station</label>
+        <select id="station-select"></select>
+        <label for="route-select">Route</label>
+        <select id="route-select"></select>
+        <button id="add-button" class="primary-button" type="button">Add stop</button>
+        <p id="load-status" class="status" role="status">Loading subway data...</p>
+      </section>
+
+      <section class="tracked" aria-labelledby="tracked-heading">
+        <div class="section-heading">
+          <h2 id="tracked-heading">Your stops</h2>
+          <button id="refresh-button" class="text-button" type="button" title="Refresh arrivals">Refresh</button>
+        </div>
+        <p id="empty-state" class="empty-state">Add a station and route to see arrivals.</p>
+        <div id="favorites" class="favorites" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script src="dist/popup.js"></script>
+  </body>
+</html>

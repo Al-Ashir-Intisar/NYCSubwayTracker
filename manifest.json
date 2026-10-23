@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "NYC Subway Tracker",
+  "version": "0.1.0",
+  "description": "Track realtime arrivals for selected NYC subway routes and stations.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "NYC Subway Tracker"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["https://api-endpoint.mta.info/*"]
+}
