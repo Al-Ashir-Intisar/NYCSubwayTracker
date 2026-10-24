@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "esbuild src/popup.js --bundle --platform=browser --format=iife --target=chrome120 --outfile=dist/popup.js"
+    "build": "node scripts/build.mjs"
   },
   "dependencies": {
     "gtfs-realtime-bindings": "^1.1.1"

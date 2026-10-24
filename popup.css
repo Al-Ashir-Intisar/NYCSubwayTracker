@@ -122,7 +122,8 @@ label {
   font-weight: 700;
 }
 
-.picker input {
+.picker input,
+#mode-input {
   width: 100%;
   min-height: 38px;
   padding: 7px 10px;
@@ -134,6 +135,7 @@ label {
   font-size: 13px;
 }
 
+#mode-input:focus,
 .picker input:focus,
 button:focus-visible,
 a:focus-visible {
@@ -272,9 +274,10 @@ button {
 
 .route-badge {
   display: grid;
-  flex: 0 0 24px;
-  width: 24px;
+  flex: 0 0 auto;
+  min-width: 24px;
   height: 24px;
+  padding: 0 5px;
   place-items: center;
   border-radius: 50%;
   background: var(--route-color, var(--accent));

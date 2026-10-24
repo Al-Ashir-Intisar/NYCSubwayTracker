@@ -1,0 +1,2 @@
+https://gtfsrt.prod.obanyc.com/tripUpdates?key=<YOUR_KEY>
+https://gtfsrt.prod.obanyc.com/alerts?key=<YOUR_KEY>

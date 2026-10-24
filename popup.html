@@ -10,7 +10,7 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">MTA REALTIME</p>
-        <h1>Subway tracker</h1>
+        <h1>Subway &amp; bus tracker</h1>
       </div>
     </header>
 
@@ -19,12 +19,17 @@
         <summary class="selector-toggle">
           <span>
             <span id="add-heading" class="selector-title">Track a stop</span>
-            <span class="selector-caption">Choose a station and route</span>
+            <span class="selector-caption">Choose subway or bus, then a stop and route</span>
           </span>
           <span class="toggle-mark" aria-hidden="true"></span>
         </summary>
         <div class="selector-body">
-          <label for="station-input">Station</label>
+          <label for="mode-input">Transit type</label>
+          <select id="mode-input">
+            <option value="subway">Subway</option>
+            <option value="bus">Bus</option>
+          </select>
+          <label for="station-input">Station or stop</label>
           <div class="picker">
             <input id="station-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="station-options" placeholder="Search stations" autocomplete="off">
             <ul id="station-options" class="picker-options" role="listbox" hidden></ul>
@@ -49,6 +54,7 @@
       </section>
     </main>
 
+    <script src="dist/bus-config.js"></script>
     <script src="dist/popup.js"></script>
   </body>
 </html>
