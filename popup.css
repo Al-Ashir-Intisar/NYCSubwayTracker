@@ -258,6 +258,12 @@ button {
   background: var(--surface);
 }
 
+.favorite.has-alert {
+  border-color: #e5c46a;
+  border-left-color: #b7791f;
+  background: #fff8e6;
+}
+
 .favorite-header {
   display: flex;
   align-items: flex-start;
@@ -295,6 +301,49 @@ button {
 
 .remove-button:hover {
   color: #a32929;
+}
+
+.service-alerts,
+.service-alert-error {
+  margin: 8px 0 0 32px;
+}
+
+.service-alert {
+  color: #68480e;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.service-alert + .service-alert {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #ead9a8;
+}
+
+.service-alert summary {
+  cursor: pointer;
+}
+
+.service-alert-label {
+  display: inline-block;
+  margin-right: 5px;
+  color: #754b08;
+  font-weight: 700;
+}
+
+.service-alert-header {
+  font-weight: 600;
+}
+
+.service-alert-description {
+  margin: 5px 0 0;
+  color: #604c27;
+}
+
+.service-alert-error {
+  color: #8a4b16;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .arrival-status {

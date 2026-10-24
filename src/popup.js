@@ -2,6 +2,7 @@ import * as GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 
 const FAVORITES_STORAGE_KEY = 'trackedStops';
 const FEEDS_PATH = 'gtfs_subway/realtime_feed_apis.txt';
+const SERVICE_ALERT_FEEDS_PATH = 'gtfs_subway/service_alert_feeds.txt';
 const STOPS_PATH = 'gtfs_subway/stops.txt';
 const ROUTES_PATH = 'gtfs_subway/routes.txt';
 const REFRESH_INTERVAL_MS = 15_000;
@@ -30,6 +31,7 @@ let stopsByStation = new Map();
 let stationByStopId = new Map();
 let routesById = new Map();
 let feedUrlsByGroup = new Map();
+let serviceAlertFeedUrls = [];
 let favorites = [];
 let stationLabels = new Map();
 let stationById = new Map();
@@ -87,10 +89,11 @@ async function loadText(path) {
 }
 
 async function loadData() {
-  const [stopsText, routesText, feedsText] = await Promise.all([
+  const [stopsText, routesText, feedsText, serviceAlertFeedsText] = await Promise.all([
     loadText(STOPS_PATH),
     loadText(ROUTES_PATH),
-    loadText(FEEDS_PATH)
+    loadText(FEEDS_PATH),
+    loadText(SERVICE_ALERT_FEEDS_PATH)
   ]);
   const stops = parseCsv(stopsText);
   const routes = parseCsv(routesText);
@@ -136,6 +139,24 @@ async function loadData() {
       }
     })
     .filter(Boolean));
+  serviceAlertFeedUrls = serviceAlertFeedsText.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .map((value) => {
+      let url;
+      try {
+        url = new URL(value);
+      } catch {
+        throw new Error('The service alert feed URL is invalid.');
+      }
+      if (url.protocol !== 'https:' || url.hostname !== 'api-endpoint.mta.info') {
+        throw new Error('The service alert feed must use the MTA API endpoint.');
+      }
+      return url.href;
+    });
+  if (!serviceAlertFeedUrls.length) {
+    throw new Error('No service alert feed is configured.');
+  }
 
   attachPicker(stationInput, stationOptions, stations, (station) => stationLabels.get(station.stop_id), (station) => station.stop_id);
   attachPicker(routeInput, routeOptions, [...routesById.values()], (route) => `${route.route_short_name} · ${route.route_long_name}`, (route) => route.route_id);
@@ -314,6 +335,13 @@ function renderFavorites() {
   }
 }
 
+function getTranslatedText(translatedString) {
+  const translations = translatedString?.translation || [];
+  return translations.find((translation) => translation.language === 'en')?.text
+    || translations.find((translation) => !translation.language?.endsWith('-html'))?.text
+    || '';
+}
+
 function getEpochSeconds(value) {
   if (typeof value === 'number') return value;
   if (value && typeof value.toNumber === 'function') return value.toNumber();
@@ -345,6 +373,81 @@ async function fetchFeed(group, feedCache) {
   })();
   feedCache.set(group, request);
   return request;
+}
+
+async function fetchServiceAlerts() {
+  const feeds = await Promise.all(serviceAlertFeedUrls.map(async (url) => {
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`MTA service alert feed returned HTTP ${response.status}.`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
+  }));
+  return [...new Map(feeds.flatMap((feed) => (feed.entity || [])
+    .filter((entity) => entity.alert)
+    .map((entity) => [entity.id, entity.alert]))).values()];
+}
+
+function isAlertActive(alert, now) {
+  const periods = alert.activePeriod || [];
+  return !periods.length || periods.some((period) => {
+    const startsInTime = period.start == null || getEpochSeconds(period.start) <= now;
+    const hasNotEnded = period.end == null || getEpochSeconds(period.end) >= now;
+    return startsInTime && hasNotEnded;
+  });
+}
+
+function findServiceAlerts(alerts, favorite) {
+  const stationStopIds = stopsByStation.get(favorite.stationId) || new Set([favorite.stationId]);
+  const selectedRouteId = canonicalRoute(favorite.routeId);
+  const now = Date.now() / 1000;
+  return alerts.filter((alert) => isAlertActive(alert, now)
+    && (alert.informedEntity || []).some((selector) => (
+      selector.routeId
+      && selector.stopId
+      && (selector.routeType == null || selector.routeType === 0)
+      && canonicalRoute(selector.routeId) === selectedRouteId
+      && stationStopIds.has(selector.stopId)
+    )));
+}
+
+function isDelayAlert(alert) {
+  return alert.effect === GtfsRealtimeBindings.transit_realtime.Alert.Effect.SIGNIFICANT_DELAYS
+    || /delay/i.test(getTranslatedText(alert.headerText));
+}
+
+function renderServiceAlerts(card, alerts) {
+  const expandedAlertIds = new Set(
+    [...card.querySelectorAll('.service-alert[open]')].map((item) => item.dataset.alertId)
+  );
+  card.querySelector('.service-alerts, .service-alert-error')?.remove();
+  card.classList.toggle('has-alert', alerts.length > 0);
+  if (!alerts.length) return;
+
+  const container = document.createElement('div');
+  container.className = 'service-alerts';
+  for (const alert of alerts) {
+    const details = document.createElement('details');
+    details.className = 'service-alert';
+    details.dataset.alertId = alert.id || '';
+    details.open = expandedAlertIds.has(alert.id || '');
+
+    const summary = document.createElement('summary');
+    const label = document.createElement('span');
+    label.className = 'service-alert-label';
+    label.textContent = isDelayAlert(alert) ? 'Delays' : 'Service alert';
+    const header = document.createElement('span');
+    header.className = 'service-alert-header';
+    header.textContent = getTranslatedText(alert.headerText) || 'Service change';
+    summary.append(label, header);
+    details.append(summary);
+
+    const description = document.createElement('p');
+    description.className = 'service-alert-description';
+    description.textContent = getTranslatedText(alert.descriptionText) || 'No additional details provided.';
+    details.append(description);
+    container.append(details);
+  }
+  card.append(container);
 }
 
 function findArrivals(feed, favorite) {
@@ -431,41 +534,66 @@ function renderArrivalGroups(card, arrivals) {
 }
 
 async function refreshArrivals() {
-  if (refreshButton.disabled) return;
+  if (refreshButton.disabled || !favorites.length) return;
   refreshButton.disabled = true;
   const feedCache = new Map();
 
   try {
+    const alertResult = fetchServiceAlerts().then(
+      (alerts) => ({ alerts }),
+      (error) => ({ error })
+    );
+
     await Promise.all(favorites.map(async (favorite) => {
       const card = [...favoritesContainer.children]
         .find((element) => element.dataset.favoriteId === favorite.id);
       if (!card) return;
       card.querySelector('.arrival-status, .arrival-groups')?.remove();
 
-      const group = ROUTE_FEED_GROUP[favorite.routeId];
-      if (!group) {
-        setArrivalStatus(card, 'Realtime predictions are not available for this route.');
-        return;
-      }
-
-      setArrivalStatus(card, 'Loading arrivals...');
-      try {
-        const feed = await fetchFeed(group, feedCache);
-        const arrivals = findArrivals(feed, favorite);
-        card.querySelector('.arrival-status')?.remove();
-        if (!arrivals.length) {
-          setArrivalStatus(card, 'No upcoming predictions at this stop.');
+      const alertUpdate = alertResult.then((result) => {
+        if (result.error) {
+          card.classList.remove('has-alert');
+          card.querySelector('.service-alerts, .service-alert-error')?.remove();
+          const status = document.createElement('p');
+          status.className = 'service-alert-error';
+          status.textContent = result.error instanceof Error
+            ? `Service alerts unavailable: ${result.error.message}`
+            : 'Service alerts unavailable.';
+          card.append(status);
           return;
         }
 
-        const groups = document.createElement('div');
-        groups.className = 'arrival-groups';
-        card.append(groups);
-        renderArrivalGroups(groups, arrivals);
-      } catch (error) {
-        card.querySelector('.arrival-status')?.remove();
-        setArrivalStatus(card, error instanceof Error ? error.message : 'Unable to load arrivals.');
-      }
+        renderServiceAlerts(card, findServiceAlerts(result.alerts, favorite));
+      });
+
+      const arrivalUpdate = (async () => {
+        const group = ROUTE_FEED_GROUP[favorite.routeId];
+        if (!group) {
+          setArrivalStatus(card, 'Realtime predictions are not available for this route.');
+          return;
+        }
+
+        setArrivalStatus(card, 'Loading arrivals...');
+        try {
+          const feed = await fetchFeed(group, feedCache);
+          const arrivals = findArrivals(feed, favorite);
+          card.querySelector('.arrival-status')?.remove();
+          if (!arrivals.length) {
+            setArrivalStatus(card, 'No upcoming predictions at this stop.');
+            return;
+          }
+
+          const groups = document.createElement('div');
+          groups.className = 'arrival-groups';
+          card.append(groups);
+          renderArrivalGroups(groups, arrivals);
+        } catch (error) {
+          card.querySelector('.arrival-status')?.remove();
+          setArrivalStatus(card, error instanceof Error ? error.message : 'Unable to load arrivals.');
+        }
+      })();
+
+      await Promise.all([alertUpdate, arrivalUpdate]);
     }));
   } finally {
     refreshButton.disabled = false;
