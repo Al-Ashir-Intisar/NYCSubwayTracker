@@ -10,6 +10,7 @@ const ROUTES_PATH = 'gtfs_subway/routes.txt';
 const BUS_STOPS_PATH = 'gtfs_bus/stops.txt';
 const BUS_ROUTES_PATH = 'gtfs_bus/routes.txt';
 const REFRESH_INTERVAL_MS = 15_000;
+const FEED_REQUEST_TIMEOUT_MS = 12_000;
 const ROUTE_FEED_GROUP = {
   A: 'ACE', C: 'ACE', E: 'ACE',
   B: 'BDFM', D: 'BDFM', F: 'BDFM', FX: 'BDFM', M: 'BDFM',
@@ -57,6 +58,7 @@ let feedUrlsByGroup = new Map();
 let busFeedUrls = {};
 let serviceAlertFeedUrls = [];
 const favoritesByMode = { subway: [], bus: [] };
+const loadingModes = new Set();
 
 function parseCsv(text) {
   const rows = [];
@@ -106,22 +108,35 @@ function parseCsv(text) {
 
 async function loadText(path) {
   const response = await fetch(chrome.runtime.getURL(path));
-  if (!response.ok) throw new Error(`Unable to read ${path}.`);
+  if (!response.ok) throw new Error(`Unable to read ${path} (HTTP ${response.status}).`);
   return response.text();
 }
 
-async function loadData() {
-  const [subwayStopsText, subwayRoutesText, feedsText, serviceAlertFeedsText, busStopsText, busRoutesText] = await Promise.all([
+async function fetchFeedResponse(url, feedName) {
+  let response;
+  try {
+    response = await fetch(url, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(FEED_REQUEST_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new Error(`${feedName} request timed out.`);
+    }
+    throw error;
+  }
+  if (!response.ok) throw new Error(`${feedName} returned HTTP ${response.status}.`);
+  return response;
+}
+
+async function loadSubwayData() {
+  const [stopsText, routesText, feedsText, serviceAlertFeedsText] = await Promise.all([
     loadText(STOPS_PATH),
     loadText(ROUTES_PATH),
     loadText(FEEDS_PATH),
-    loadText(SERVICE_ALERT_FEEDS_PATH),
-    loadText(BUS_STOPS_PATH),
-    loadText(BUS_ROUTES_PATH)
+    loadText(SERVICE_ALERT_FEEDS_PATH)
   ]);
-  views.subway.data = buildSubwayData(subwayStopsText, subwayRoutesText);
-  views.bus.data = buildBusData(busStopsText, busRoutesText);
-  busFeedUrls = globalThis.NYC_BUS_FEED_URLS || {};
+  const data = buildSubwayData(stopsText, routesText);
 
   feedUrlsByGroup = new Map(feedsText.split(/\r?\n/)
     .map((line) => line.trim())
@@ -157,14 +172,30 @@ async function loadData() {
     throw new Error('No service alert feed is configured.');
   }
 
-  for (const view of Object.values(views)) {
-    const { data } = view;
-    attachPicker(view.stationInput, view.stationOptions, data.stations,
-      (station) => data.stationLabels.get(station.stop_id), (station) => station.stop_id);
-    attachPicker(view.routeInput, view.routeOptions, [...data.routesById.values()],
-      (route) => `${route.route_short_name} · ${route.route_long_name}`, (route) => route.route_id);
-    view.loadStatus.textContent = `${data.stations.length.toLocaleString()} ${view.mode === 'bus' ? 'bus stops' : 'stations'} loaded.`;
+  return data;
+}
+
+async function loadBusData() {
+  const [stopsText, routesText] = await Promise.all([
+    loadText(BUS_STOPS_PATH),
+    loadText(BUS_ROUTES_PATH)
+  ]);
+  busFeedUrls = globalThis.NYC_BUS_FEED_URLS || {};
+  if (!busFeedUrls.tripUpdates || !busFeedUrls.alerts) {
+    throw new Error('Bus API key configuration is missing. Set MTA_BUS_API_KEY in .dev.vars and run npm run build.');
   }
+  return buildBusData(stopsText, routesText);
+}
+
+function initializeView(mode) {
+  const view = views[mode];
+  const { data } = view;
+  attachPicker(view.stationInput, view.stationOptions, data.stations,
+    (station) => data.stationLabels.get(station.stop_id), (station) => station.stop_id);
+  attachPicker(view.routeInput, view.routeOptions, [...data.routesById.values()],
+    (route) => `${route.route_short_name} · ${route.route_long_name}`, (route) => route.route_id);
+  view.addButton.disabled = false;
+  view.loadStatus.textContent = `${data.stations.length.toLocaleString()} ${mode === 'bus' ? 'bus stops' : 'stations'} loaded.`;
 }
 
 function buildSubwayData(stopsText, routesText) {
@@ -360,9 +391,9 @@ function removeFavorite(mode, id) {
   renderFavorites(mode);
 }
 
-function setArrivalStatus(container, message) {
+function setArrivalStatus(container, message, isError = false) {
   const status = document.createElement('p');
-  status.className = 'arrival-status';
+  status.className = isError ? 'arrival-status arrival-error' : 'arrival-status';
   status.textContent = message;
   container.append(status);
 }
@@ -432,8 +463,7 @@ async function fetchFeed(group, feedCache) {
   if (!url) throw new Error(`No realtime feed is configured for this route (${group}).`);
 
   const request = (async () => {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`MTA feed returned HTTP ${response.status}.`);
+    const response = await fetchFeedResponse(url, 'Subway predictions');
     const bytes = new Uint8Array(await response.arrayBuffer());
     return GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
   })();
@@ -443,8 +473,7 @@ async function fetchFeed(group, feedCache) {
 
 async function fetchServiceAlerts() {
   const feeds = await Promise.all(serviceAlertFeedUrls.map(async (url) => {
-    const response = await fetch(url, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`MTA service alert feed returned HTTP ${response.status}.`);
+    const response = await fetchFeedResponse(url, 'Subway alerts');
     const bytes = new Uint8Array(await response.arrayBuffer());
     return GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
   }));
@@ -460,8 +489,7 @@ async function fetchBusFeed(feedName, feedCache) {
   if (!url) throw new Error(`No MTA bus feed is configured for ${feedName}.`);
 
   const request = (async () => {
-    const response = await fetch(url, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`MTA bus feed returned HTTP ${response.status}.`);
+    const response = await fetchFeedResponse(url, 'Bus data');
     const bytes = new Uint8Array(await response.arrayBuffer());
     return GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
   })();
@@ -644,7 +672,7 @@ function renderArrivalGroups(card, arrivals) {
 
 async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrivals) {
   const favorites = favoritesByMode[view.mode];
-  if (view.refreshButton.disabled || !favorites.length) return;
+  if (view.refreshButton.disabled || !favorites.length || !view.data) return;
   view.refreshButton.disabled = true;
   const feedCache = new Map();
 
@@ -666,8 +694,8 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
           const status = document.createElement('p');
           status.className = 'service-alert-error';
           status.textContent = result.error instanceof Error
-            ? `Service alerts unavailable: ${result.error.message}`
-            : 'Service alerts unavailable.';
+            ? `${view.mode === 'bus' ? 'Bus' : 'Subway'} alerts unavailable: ${result.error.message}`
+            : `${view.mode === 'bus' ? 'Bus' : 'Subway'} alerts unavailable.`;
           card.append(status);
           return;
         }
@@ -692,7 +720,9 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
           renderArrivalGroups(groups, arrivals);
         } catch (error) {
           card.querySelector('.arrival-status')?.remove();
-          setArrivalStatus(card, error instanceof Error ? error.message : 'Unable to load arrivals.');
+          setArrivalStatus(card, error instanceof Error
+            ? `${view.mode === 'bus' ? 'Bus' : 'Subway'} arrivals unavailable: ${error.message}`
+            : `Unable to load ${view.mode} arrivals.`, true);
         }
       })();
 
@@ -742,8 +772,13 @@ function selectMode(mode) {
     tab.setAttribute('aria-selected', String(selected));
     tab.tabIndex = selected ? 0 : -1;
   }
-  if (mode === 'subway') refreshSubway();
-  else refreshBus();
+  if (!views[mode].data) {
+    loadModeData(mode);
+  } else if (mode === 'subway') {
+    refreshSubway();
+  } else {
+    refreshBus();
+  }
 }
 
 subwayTab.addEventListener('click', () => selectMode('subway'));
@@ -766,10 +801,12 @@ for (const mode of Object.keys(views)) {
 views.subway.refreshButton.addEventListener('click', refreshSubway);
 views.bus.refreshButton.addEventListener('click', refreshBus);
 
-Promise.all([
-  loadData(),
-  chrome.storage.local.get([SUBWAY_FAVORITES_KEY, BUS_FAVORITES_KEY, LEGACY_FAVORITES_KEY])
-]).then(([_, storedValues]) => {
+async function loadFavorites() {
+  const storedValues = await chrome.storage.local.get([
+    SUBWAY_FAVORITES_KEY,
+    BUS_FAVORITES_KEY,
+    LEGACY_FAVORITES_KEY
+  ]);
   const oldFavorites = storedValues[LEGACY_FAVORITES_KEY] || [];
   favoritesByMode.subway = storedValues[SUBWAY_FAVORITES_KEY]
     || oldFavorites.filter((favorite) => !favorite.mode || favorite.mode === 'subway');
@@ -782,13 +819,50 @@ Promise.all([
   });
   if (oldFavorites.length) chrome.storage.local.remove(LEGACY_FAVORITES_KEY);
 
-  renderFavorites('subway');
-  renderFavorites('bus');
-  refreshTrackedModes();
-  window.setInterval(refreshTrackedModes, REFRESH_INTERVAL_MS);
-}).catch((error) => {
-  for (const view of Object.values(views)) {
-    view.loadStatus.textContent = error instanceof Error ? error.message : `Unable to load ${view.mode} data.`;
-    view.addButton.disabled = true;
+  for (const mode of Object.keys(views)) {
+    if (!views[mode].data) continue;
+    renderFavorites(mode);
+    if (favoritesByMode[mode].length) {
+      if (mode === 'subway') refreshSubway();
+      else refreshBus();
+    }
   }
-});
+}
+
+async function loadModeData(mode) {
+  const view = views[mode];
+  if (loadingModes.has(mode) || view.data) return;
+  loadingModes.add(mode);
+  view.addButton.disabled = true;
+  view.loadStatus.removeAttribute('data-error');
+  view.loadStatus.textContent = `Loading ${mode} routes and stops...`;
+  try {
+    view.data = mode === 'subway' ? await loadSubwayData() : await loadBusData();
+    initializeView(mode);
+    renderFavorites(mode);
+    if (favoritesByMode[mode].length) {
+      if (mode === 'subway') refreshSubway();
+      else refreshBus();
+    }
+  } catch (error) {
+    view.loadStatus.dataset.error = 'true';
+    view.loadStatus.textContent = error instanceof Error
+      ? `Unable to load ${mode} data: ${error.message}`
+      : `Unable to load ${mode} data.`;
+    view.addButton.disabled = true;
+  } finally {
+    loadingModes.delete(mode);
+  }
+}
+
+Promise.allSettled([
+  loadModeData('subway'),
+  loadModeData('bus'),
+  loadFavorites().catch((error) => {
+    const message = error instanceof Error ? error.message : 'Unable to load saved stops.';
+    for (const view of Object.values(views)) {
+      view.loadStatus.textContent = `Saved stops unavailable: ${message}`;
+    }
+  })
+]);
+window.setInterval(refreshTrackedModes, REFRESH_INTERVAL_MS);

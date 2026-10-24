@@ -258,6 +258,20 @@ button {
   line-height: 1.4;
 }
 
+.status {
+  min-height: 16px;
+}
+
+.selector + .status {
+  margin-top: 6px;
+}
+
+.arrival-error,
+.status[data-error="true"] {
+  color: #a32929;
+  font-weight: 700;
+}
+
 .tracked {
   padding-top: 13px;
 }
