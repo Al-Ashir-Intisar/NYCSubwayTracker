@@ -8,10 +8,11 @@ A Chrome extension for tracking realtime arrival predictions for selected NYC su
 2. Add your MTA Bus Time API key to the ignored `.dev.vars` file as `MTA_BUS_API_KEY=your-key` (the extension ID is no longer needed).
 3. Build the extension with `npm run build`.
 4. In Chrome, open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**. Select this repository directory.
-5. Choose Subway or Bus, select a station/stop and route, then add it to your tracked stops.
+5. Use the separate Subway and Bus tabs to choose a station/stop and route, then add it to that mode's tracked list.
 
 ## Features
 
+- Use separate Subway and Bus tabs, each with its own stop search, route search, saved stops, and arrival results.
 - Search subway stations or bus stops and routes, then save the combinations you want to track.
 - View realtime arrival predictions grouped by direction and destination.
 - See active service alerts matching each saved route and station/stop. Alerted cards are highlighted; expand an alert to read its description.

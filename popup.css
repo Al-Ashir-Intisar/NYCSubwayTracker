@@ -55,6 +55,42 @@ main {
   padding: 14px 16px 18px;
 }
 
+.transit-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: #e5e9e2;
+}
+
+.transit-tab {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.transit-tab[aria-selected="true"] {
+  position: relative;
+  top: 1px;
+  border-color: var(--line);
+  background: #f3f4ef;
+  color: var(--accent-dark);
+}
+
+.transit-tab:focus-visible {
+  outline-offset: -3px;
+}
+
+.transit-panel[hidden] {
+  display: none;
+}
+
 .selector {
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line);

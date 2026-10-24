@@ -1,6 +1,8 @@
 import * as GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 
-const FAVORITES_STORAGE_KEY = 'trackedStops';
+const SUBWAY_FAVORITES_KEY = 'trackedSubwayStops';
+const BUS_FAVORITES_KEY = 'trackedBusStops';
+const LEGACY_FAVORITES_KEY = 'trackedStops';
 const FEEDS_PATH = 'gtfs_subway/realtime_feed_apis.txt';
 const SERVICE_ALERT_FEEDS_PATH = 'gtfs_subway/service_alert_feeds.txt';
 const STOPS_PATH = 'gtfs_subway/stops.txt';
@@ -18,24 +20,43 @@ const ROUTE_FEED_GROUP = {
   SI: 'SI', SIR: 'SI'
 };
 
-const stationInput = document.querySelector('#station-input');
-const stationOptions = document.querySelector('#station-options');
-const routeInput = document.querySelector('#route-input');
-const routeOptions = document.querySelector('#route-options');
-const modeInput = document.querySelector('#mode-input');
-const addButton = document.querySelector('#add-button');
-const refreshButton = document.querySelector('#refresh-button');
-const loadStatus = document.querySelector('#load-status');
-const favoritesContainer = document.querySelector('#favorites');
-const emptyState = document.querySelector('#empty-state');
+const subwayTab = document.querySelector('#subway-tab');
+const busTab = document.querySelector('#bus-tab');
+const views = {
+  subway: {
+    mode: 'subway',
+    panel: document.querySelector('#subway-panel'),
+    stationInput: document.querySelector('#subway-station-input'),
+    stationOptions: document.querySelector('#subway-station-options'),
+    routeInput: document.querySelector('#subway-route-input'),
+    routeOptions: document.querySelector('#subway-route-options'),
+    addButton: document.querySelector('#subway-add-button'),
+    refreshButton: document.querySelector('#subway-refresh-button'),
+    loadStatus: document.querySelector('#subway-load-status'),
+    favoritesContainer: document.querySelector('#subway-favorites'),
+    emptyState: document.querySelector('#subway-empty-state'),
+    data: null
+  },
+  bus: {
+    mode: 'bus',
+    panel: document.querySelector('#bus-panel'),
+    stationInput: document.querySelector('#bus-station-input'),
+    stationOptions: document.querySelector('#bus-station-options'),
+    routeInput: document.querySelector('#bus-route-input'),
+    routeOptions: document.querySelector('#bus-route-options'),
+    addButton: document.querySelector('#bus-add-button'),
+    refreshButton: document.querySelector('#bus-refresh-button'),
+    loadStatus: document.querySelector('#bus-load-status'),
+    favoritesContainer: document.querySelector('#bus-favorites'),
+    emptyState: document.querySelector('#bus-empty-state'),
+    data: null
+  }
+};
 
-let transitDataByMode = new Map();
 let feedUrlsByGroup = new Map();
 let busFeedUrls = {};
 let serviceAlertFeedUrls = [];
-let favorites = [];
-let updateStationPicker = () => {};
-let updateRoutePicker = () => {};
+const favoritesByMode = { subway: [], bus: [] };
 
 function parseCsv(text) {
   const rows = [];
@@ -90,7 +111,7 @@ async function loadText(path) {
 }
 
 async function loadData() {
-  const [stopsText, routesText, feedsText, serviceAlertFeedsText, busStopsText, busRoutesText] = await Promise.all([
+  const [subwayStopsText, subwayRoutesText, feedsText, serviceAlertFeedsText, busStopsText, busRoutesText] = await Promise.all([
     loadText(STOPS_PATH),
     loadText(ROUTES_PATH),
     loadText(FEEDS_PATH),
@@ -98,10 +119,8 @@ async function loadData() {
     loadText(BUS_STOPS_PATH),
     loadText(BUS_ROUTES_PATH)
   ]);
-  transitDataByMode = new Map([
-    ['subway', buildTransitData(stopsText, routesText)],
-    ['bus', buildTransitData(busStopsText, busRoutesText)]
-  ]);
+  views.subway.data = buildSubwayData(subwayStopsText, subwayRoutesText);
+  views.bus.data = buildBusData(busStopsText, busRoutesText);
   busFeedUrls = globalThis.NYC_BUS_FEED_URLS || {};
 
   feedUrlsByGroup = new Map(feedsText.split(/\r?\n/)
@@ -138,13 +157,22 @@ async function loadData() {
     throw new Error('No service alert feed is configured.');
   }
 
-  updateStationPicker = attachPicker(stationInput, stationOptions, [], () => '', (station) => station.stop_id);
-  updateRoutePicker = attachPicker(routeInput, routeOptions, [], (route) => '', (route) => route.route_id);
-  modeInput.addEventListener('change', updateTransitMode);
-  updateTransitMode();
-  const subwayData = transitDataByMode.get('subway');
-  const busData = transitDataByMode.get('bus');
-  loadStatus.textContent = `${subwayData.stations.length.toLocaleString()} subway stations and ${busData.stations.length.toLocaleString()} bus stops loaded.`;
+  for (const view of Object.values(views)) {
+    const { data } = view;
+    attachPicker(view.stationInput, view.stationOptions, data.stations,
+      (station) => data.stationLabels.get(station.stop_id), (station) => station.stop_id);
+    attachPicker(view.routeInput, view.routeOptions, [...data.routesById.values()],
+      (route) => `${route.route_short_name} · ${route.route_long_name}`, (route) => route.route_id);
+    view.loadStatus.textContent = `${data.stations.length.toLocaleString()} ${view.mode === 'bus' ? 'bus stops' : 'stations'} loaded.`;
+  }
+}
+
+function buildSubwayData(stopsText, routesText) {
+  return buildTransitData(stopsText, routesText);
+}
+
+function buildBusData(stopsText, routesText) {
+  return buildTransitData(stopsText, routesText);
 }
 
 function buildTransitData(stopsText, routesText) {
@@ -178,18 +206,6 @@ function buildTransitData(stopsText, routesText) {
 
   const routesById = new Map(routes.map((route) => [route.route_id, route]));
   return { stations, stationById, stopsByStation, stationByStopId, routesById, stationLabels };
-}
-
-function updateTransitMode() {
-  const mode = modeInput.value === 'bus' ? 'bus' : 'subway';
-  const data = transitDataByMode.get(mode);
-  if (!data) return;
-  updateStationPicker(data.stations, (station) => data.stationLabels.get(station.stop_id), (station) => station.stop_id);
-  updateRoutePicker(
-    [...data.routesById.values()],
-    (route) => `${route.route_short_name} · ${route.route_long_name}`,
-    (route) => route.route_id
-  );
 }
 
 function attachPicker(input, list, items, labelFor, idFor) {
@@ -302,43 +318,46 @@ function canonicalRoute(routeId) {
   return routeId;
 }
 
-function addFavorite() {
-  const mode = modeInput.value === 'bus' ? 'bus' : 'subway';
-  const data = transitDataByMode.get(mode);
-  const station = data?.stationById.get(stationInput.dataset.selectedId);
-  const route = data?.routesById.get(routeInput.dataset.selectedId);
+function addFavorite(mode) {
+  const view = views[mode];
+  const station = view.data.stationById.get(view.stationInput.dataset.selectedId);
+  const route = view.data.routesById.get(view.routeInput.dataset.selectedId);
   if (!station || !route) {
-    loadStatus.textContent = 'Choose a station and route from the search results.';
+    view.loadStatus.textContent = `Choose a ${mode === 'bus' ? 'bus stop and route' : 'station and route'} from the search results.`;
     return;
   }
 
-  const id = `${mode}:${station.stop_id}:${route.route_id}`;
-  if (favorites.some((favorite) => (
-    (favorite.mode || 'subway') === mode
-    && favorite.stationId === station.stop_id
+  const id = `${station.stop_id}:${route.route_id}`;
+  if (favoritesByMode[mode].some((favorite) => (
+    favorite.stationId === station.stop_id
     && favorite.routeId === route.route_id
   ))) {
-    loadStatus.textContent = 'That station and route are already tracked.';
+    view.loadStatus.textContent = `That ${mode === 'bus' ? 'stop' : 'station'} and route are already tracked.`;
     return;
   }
 
-  favorites = [...favorites, {
+  favoritesByMode[mode] = [...favoritesByMode[mode], {
     id,
-    mode,
     stationId: station.stop_id,
     stationName: station.stop_name,
     routeId: route.route_id
   }];
-  chrome.storage.local.set({ [FAVORITES_STORAGE_KEY]: favorites });
-  renderFavorites();
-  loadStatus.textContent = 'Stop added.';
-  refreshArrivals();
+  persistFavorites(mode);
+  renderFavorites(mode);
+  view.loadStatus.textContent = 'Stop added.';
+  if (mode === 'subway') refreshSubway();
+  else refreshBus();
 }
 
-function removeFavorite(id) {
-  favorites = favorites.filter((favorite) => favorite.id !== id);
-  chrome.storage.local.set({ [FAVORITES_STORAGE_KEY]: favorites });
-  renderFavorites();
+function persistFavorites(mode) {
+  const key = mode === 'bus' ? BUS_FAVORITES_KEY : SUBWAY_FAVORITES_KEY;
+  chrome.storage.local.set({ [key]: favoritesByMode[mode] });
+}
+
+function removeFavorite(mode, id) {
+  favoritesByMode[mode] = favoritesByMode[mode].filter((favorite) => favorite.id !== id);
+  persistFavorites(mode);
+  renderFavorites(mode);
 }
 
 function setArrivalStatus(container, message) {
@@ -348,17 +367,17 @@ function setArrivalStatus(container, message) {
   container.append(status);
 }
 
-function renderFavorites() {
-  favoritesContainer.replaceChildren();
-  emptyState.hidden = favorites.length > 0;
+function renderFavorites(mode) {
+  const view = views[mode];
+  const favorites = favoritesByMode[mode];
+  view.favoritesContainer.replaceChildren();
+  view.emptyState.hidden = favorites.length > 0;
 
   for (const favorite of favorites) {
-    const mode = favorite.mode === 'bus' ? 'bus' : 'subway';
-    const route = transitDataByMode.get(mode)?.routesById.get(favorite.routeId);
+    const route = view.data.routesById.get(favorite.routeId);
     const card = document.createElement('article');
     card.className = 'favorite';
     card.dataset.favoriteId = favorite.id;
-    card.dataset.mode = mode;
     card.style.setProperty('--route-color', routeColor(route));
     card.style.setProperty('--route-text', routeTextColor(route));
 
@@ -375,7 +394,7 @@ function renderFavorites() {
     removeButton.type = 'button';
     removeButton.textContent = 'Remove';
     removeButton.setAttribute('aria-label', `Remove ${favorite.routeId} at ${favorite.stationName}`);
-    removeButton.addEventListener('click', () => removeFavorite(favorite.id));
+    removeButton.addEventListener('click', () => removeFavorite(mode, favorite.id));
     header.append(badge, name, removeButton);
     card.append(header);
     favoritesContainer.append(card);
@@ -450,15 +469,12 @@ async function fetchBusFeed(feedName, feedCache) {
   return request;
 }
 
-async function fetchFavoriteAlerts(mode, feedCache) {
-  if (mode === 'bus') {
-    const feed = await fetchBusFeed('alerts', feedCache);
-    return (feed.entity || []).filter((entity) => entity.alert).map((entity) => ({
-      ...entity.alert,
-      id: entity.id
-    }));
-  }
-  return fetchServiceAlerts();
+async function fetchBusAlerts(feedCache) {
+  const feed = await fetchBusFeed('alerts', feedCache);
+  return (feed.entity || []).filter((entity) => entity.alert).map((entity) => ({
+    ...entity.alert,
+    id: entity.id
+  }));
 }
 
 function isAlertActive(alert, now) {
@@ -470,9 +486,8 @@ function isAlertActive(alert, now) {
   });
 }
 
-function findServiceAlerts(alerts, favorite) {
-  const mode = favorite.mode === 'bus' ? 'bus' : 'subway';
-  const data = transitDataByMode.get(mode);
+function matchServiceAlerts(alerts, favorite, mode) {
+  const data = views[mode].data;
   const stationStopIds = data?.stopsByStation.get(favorite.stationId) || new Set([favorite.stationId]);
   const selectedRouteId = canonicalRoute(favorite.routeId);
   const now = Date.now() / 1000;
@@ -484,6 +499,14 @@ function findServiceAlerts(alerts, favorite) {
       && canonicalRoute(selector.routeId) === selectedRouteId
       && stationStopIds.has(selector.stopId)
     )));
+}
+
+function findSubwayServiceAlerts(alerts, favorite) {
+  return matchServiceAlerts(alerts, favorite, 'subway');
+}
+
+function findBusServiceAlerts(alerts, favorite) {
+  return matchServiceAlerts(alerts, favorite, 'bus');
 }
 
 function isDelayAlert(alert) {
@@ -526,9 +549,8 @@ function renderServiceAlerts(card, alerts) {
   card.append(container);
 }
 
-function findArrivals(feed, favorite) {
-  const mode = favorite.mode === 'bus' ? 'bus' : 'subway';
-  const data = transitDataByMode.get(mode);
+function findTransitArrivals(feed, favorite, mode) {
+  const data = views[mode].data;
   const stationStopIds = data?.stopsByStation.get(favorite.stationId) || new Set([favorite.stationId]);
   const selectedRouteId = canonicalRoute(favorite.routeId);
   const now = Date.now() / 1000;
@@ -565,6 +587,14 @@ function findArrivals(feed, favorite) {
     uniqueArrivals.set(`${arrival.tripId}:${arrival.epoch}:${arrival.stopId}`, arrival);
   }
   return [...uniqueArrivals.values()].sort((left, right) => left.epoch - right.epoch);
+}
+
+function findSubwayArrivals(feed, favorite) {
+  return findTransitArrivals(feed, favorite, 'subway');
+}
+
+function findBusArrivals(feed, favorite) {
+  return findTransitArrivals(feed, favorite, 'bus');
 }
 
 function renderArrivalGroups(card, arrivals) {
@@ -612,25 +642,24 @@ function renderArrivalGroups(card, arrivals) {
   }
 }
 
-async function refreshArrivals() {
-  if (refreshButton.disabled || !favorites.length) return;
-  refreshButton.disabled = true;
+async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrivals) {
+  const favorites = favoritesByMode[view.mode];
+  if (view.refreshButton.disabled || !favorites.length) return;
+  view.refreshButton.disabled = true;
   const feedCache = new Map();
-  const alertResults = new Map([...new Set(favorites.map((favorite) => favorite.mode === 'bus' ? 'bus' : 'subway'))]
-    .map((mode) => [mode, fetchFavoriteAlerts(mode, feedCache).then(
-      (alerts) => ({ alerts }),
-      (error) => ({ error })
-    )]));
 
   try {
+    const alertResult = getAlerts(feedCache).then(
+      (alerts) => ({ alerts }),
+      (error) => ({ error })
+    );
     await Promise.all(favorites.map(async (favorite) => {
-      const mode = favorite.mode === 'bus' ? 'bus' : 'subway';
-      const card = [...favoritesContainer.children]
+      const card = [...view.favoritesContainer.children]
         .find((element) => element.dataset.favoriteId === favorite.id);
       if (!card) return;
       card.querySelector('.arrival-status, .arrival-groups')?.remove();
 
-      const alertUpdate = alertResults.get(mode).then((result) => {
+      const alertUpdate = alertResult.then((result) => {
         if (result.error) {
           card.classList.remove('has-alert');
           card.querySelector('.service-alerts, .service-alert-error')?.remove();
@@ -643,21 +672,13 @@ async function refreshArrivals() {
           return;
         }
 
-        renderServiceAlerts(card, findServiceAlerts(result.alerts, favorite));
+        renderServiceAlerts(card, findAlerts(result.alerts, favorite));
       });
 
       const arrivalUpdate = (async () => {
-        const group = mode === 'subway' ? ROUTE_FEED_GROUP[favorite.routeId] : null;
-        if (mode === 'subway' && !group) {
-          setArrivalStatus(card, 'Realtime predictions are not available for this route.');
-          return;
-        }
-
         setArrivalStatus(card, 'Loading arrivals...');
         try {
-          const feed = mode === 'bus'
-            ? await fetchBusFeed('tripUpdates', feedCache)
-            : await fetchFeed(group, feedCache);
+          const feed = await getArrivals(favorite, feedCache);
           const arrivals = findArrivals(feed, favorite);
           card.querySelector('.arrival-status')?.remove();
           if (!arrivals.length) {
@@ -678,23 +699,96 @@ async function refreshArrivals() {
       await Promise.all([alertUpdate, arrivalUpdate]);
     }));
   } finally {
-    refreshButton.disabled = false;
+    view.refreshButton.disabled = false;
   }
 }
 
-addButton.addEventListener('click', addFavorite);
-refreshButton.addEventListener('click', refreshArrivals);
+function refreshSubway() {
+  return refreshView(
+    views.subway,
+    fetchServiceAlerts,
+    (favorite, feedCache) => {
+      const group = ROUTE_FEED_GROUP[favorite.routeId];
+      if (!group) throw new Error('Realtime predictions are not available for this route.');
+      return fetchFeed(group, feedCache);
+    },
+    findSubwayServiceAlerts,
+    findSubwayArrivals
+  );
+}
+
+function refreshBus() {
+  return refreshView(
+    views.bus,
+    fetchBusAlerts,
+    (_favorite, feedCache) => fetchBusFeed('tripUpdates', feedCache),
+    findBusServiceAlerts,
+    findBusArrivals
+  );
+}
+
+function refreshTrackedModes() {
+  return Promise.all([
+    favoritesByMode.subway.length ? refreshSubway() : Promise.resolve(),
+    favoritesByMode.bus.length ? refreshBus() : Promise.resolve()
+  ]);
+}
+
+function selectMode(mode) {
+  for (const [viewMode, view] of Object.entries(views)) {
+    const selected = viewMode === mode;
+    view.panel.hidden = !selected;
+    const tab = viewMode === 'subway' ? subwayTab : busTab;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  if (mode === 'subway') refreshSubway();
+  else refreshBus();
+}
+
+subwayTab.addEventListener('click', () => selectMode('subway'));
+busTab.addEventListener('click', () => selectMode('bus'));
+subwayTab.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowRight') {
+    busTab.focus();
+    selectMode('bus');
+  }
+});
+busTab.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowLeft') {
+    subwayTab.focus();
+    selectMode('subway');
+  }
+});
+for (const mode of Object.keys(views)) {
+  views[mode].addButton.addEventListener('click', () => addFavorite(mode));
+}
+views.subway.refreshButton.addEventListener('click', refreshSubway);
+views.bus.refreshButton.addEventListener('click', refreshBus);
 
 Promise.all([
   loadData(),
-  chrome.storage.local.get(FAVORITES_STORAGE_KEY).then((values) => {
-    favorites = values[FAVORITES_STORAGE_KEY] || [];
-  })
-]).then(() => {
-  renderFavorites();
-  refreshArrivals();
-  window.setInterval(refreshArrivals, REFRESH_INTERVAL_MS);
+  chrome.storage.local.get([SUBWAY_FAVORITES_KEY, BUS_FAVORITES_KEY, LEGACY_FAVORITES_KEY])
+]).then(([_, storedValues]) => {
+  const oldFavorites = storedValues[LEGACY_FAVORITES_KEY] || [];
+  favoritesByMode.subway = storedValues[SUBWAY_FAVORITES_KEY]
+    || oldFavorites.filter((favorite) => !favorite.mode || favorite.mode === 'subway');
+  favoritesByMode.bus = storedValues[BUS_FAVORITES_KEY]
+    || oldFavorites.filter((favorite) => favorite.mode === 'bus');
+
+  chrome.storage.local.set({
+    [SUBWAY_FAVORITES_KEY]: favoritesByMode.subway,
+    [BUS_FAVORITES_KEY]: favoritesByMode.bus
+  });
+  if (oldFavorites.length) chrome.storage.local.remove(LEGACY_FAVORITES_KEY);
+
+  renderFavorites('subway');
+  renderFavorites('bus');
+  refreshTrackedModes();
+  window.setInterval(refreshTrackedModes, REFRESH_INTERVAL_MS);
 }).catch((error) => {
-  loadStatus.textContent = error instanceof Error ? error.message : 'Unable to load subway data.';
-  addButton.disabled = true;
+  for (const view of Object.values(views)) {
+    view.loadStatus.textContent = error instanceof Error ? error.message : `Unable to load ${view.mode} data.`;
+    view.addButton.disabled = true;
+  }
 });
