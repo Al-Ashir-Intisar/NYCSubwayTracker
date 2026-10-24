@@ -428,7 +428,7 @@ function renderFavorites(mode) {
     removeButton.addEventListener('click', () => removeFavorite(mode, favorite.id));
     header.append(badge, name, removeButton);
     card.append(header);
-    favoritesContainer.append(card);
+    view.favoritesContainer.append(card);
   }
 }
 
