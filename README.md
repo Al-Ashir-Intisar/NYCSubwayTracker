@@ -13,7 +13,7 @@ A Chrome extension for tracking realtime arrival predictions for selected NYC su
 ## Features
 
 - Use separate Subway and Bus tabs, each with its own stop search, route search, saved stops, and arrival results.
-- Search subway stations or bus stops and routes, then save the combinations you want to track.
+- Search subway stations or bus stops and routes with relevance-ranked fuzzy matching, then save the combinations you want to track.
 - View realtime arrival predictions grouped by direction and destination.
 - See active service alerts matching each saved route and station/stop. Alerted cards are highlighted; expand an alert to read its description.
 - Refresh arrivals and service alerts every 15 seconds while the popup is open. Saved stops are stored in your browser.

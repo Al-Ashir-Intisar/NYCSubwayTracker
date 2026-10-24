@@ -1,4 +1,5 @@
 import * as GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import Fuse from 'fuse.js';
 
 const SUBWAY_FAVORITES_KEY = 'trackedSubwayStops';
 const BUS_FAVORITES_KEY = 'trackedBusStops';
@@ -242,6 +243,7 @@ function buildTransitData(stopsText, routesText) {
 function attachPicker(input, list, items, labelFor, idFor) {
   let matches = [];
   let activeIndex = -1;
+  let fuse = new Fuse(items.map(labelFor));
 
   function close() {
     list.hidden = true;
@@ -257,8 +259,10 @@ function attachPicker(input, list, items, labelFor, idFor) {
   }
 
   function render() {
-    const query = input.value.trim().toLocaleLowerCase();
-    matches = items.filter((item) => labelFor(item).toLocaleLowerCase().includes(query)).slice(0, 12);
+    const query = input.value.trim();
+    matches = (query
+      ? fuse.search(query).map((result) => items[result.refIndex])
+      : items).slice(0, 12);
     list.replaceChildren();
     activeIndex = -1;
     input.removeAttribute('aria-activedescendant');
@@ -327,6 +331,7 @@ function attachPicker(input, list, items, labelFor, idFor) {
     items = nextItems;
     labelFor = nextLabelFor;
     idFor = nextIdFor;
+    fuse = new Fuse(items.map(labelFor));
     input.value = '';
     delete input.dataset.selectedId;
     close();
