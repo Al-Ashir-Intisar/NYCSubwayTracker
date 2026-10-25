@@ -1,6 +1,6 @@
 {
-  "name": "nyc-subway-tracker",
-  "version": "0.1.0",
+  "name": "nyc-transit-tracker",
+  "version": "0.1.1",
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs"

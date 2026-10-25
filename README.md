@@ -1,4 +1,4 @@
-# NYCSubwayTracker
+# NYC Transit Tracker
 
 A Chrome extension for tracking realtime arrival predictions for selected NYC subway and bus routes and stops.
 
@@ -28,4 +28,4 @@ Only transit modes with saved station/route combinations are refreshed. If you t
 
 ## How It Looks
 
-![NYC Subway Tracker extension popup showing tracked stations, arrival predictions, and a service alert](./ExtensionUI.png)
+![NYC Transit Tracker extension popup showing tracked stations, arrival predictions, and a service alert](./ExtensionUI.png)
