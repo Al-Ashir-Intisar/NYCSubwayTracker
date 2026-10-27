@@ -3,6 +3,7 @@
   "name": "NYC Transit Tracker",
   "version": "0.1.1",
   "description": "Track realtime arrivals and service alerts for NYC subway and bus stops.",
+  "homepage_url": "https://github.com/Al-Ashir-Intisar/NYCSubwayTracker",
   "action": {
     "default_popup": "popup.html",
     "default_title": "NYC Transit Tracker"

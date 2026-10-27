@@ -491,3 +491,23 @@ button {
 .empty-state[hidden] {
   display: none;
 }
+.popup-footer {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.popup-footer a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.popup-footer a:hover,
+.popup-footer a:focus-visible {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
