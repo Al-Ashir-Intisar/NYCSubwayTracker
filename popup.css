@@ -391,6 +391,7 @@ button {
 .service-alert-description {
   margin: 5px 0 0;
   color: #604c27;
+  white-space: pre-line;
 }
 
 .service-alert-error {

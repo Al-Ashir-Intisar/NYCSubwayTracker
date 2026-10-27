@@ -438,11 +438,31 @@ function renderFavorites(mode) {
   }
 }
 
+// Some feeds (buses) only send HTML-formatted text, with entities and zero-width characters.
+function toPlainText(text) {
+  if (!/[<&]/.test(text)) return text.trim();
+  const breaks = text.replace(/<\/(p|li|ul|div)>|<br\s*\/?>/gi, '\n');
+  const parsed = new DOMParser().parseFromString(breaks, 'text/html').body.textContent || '';
+  return parsed
+    .replace(/[​-‍﻿]/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function getTranslatedText(translatedString) {
   const translations = translatedString?.translation || [];
-  return translations.find((translation) => translation.language === 'en')?.text
-    || translations.find((translation) => !translation.language?.endsWith('-html'))?.text
+  const isLanguage = (translation, language) => translation.language?.toLowerCase() === language;
+  const text = translations.find((translation) => isLanguage(translation, 'en'))?.text
+    || translations.find((translation) => !translation.language?.toLowerCase().endsWith('-html'))?.text
     || '';
+  return toPlainText(text);
+}
+
+// MTA descriptions include a "What's happening?" line that names the reason in a few words.
+function getAlertSummary(alert) {
+  return getTranslatedText(alert.descriptionText)
+    .match(/What['’]s happening\?\s*\n+([^\n]+)/i)?.[1].trim() || '';
 }
 
 function getEpochSeconds(value) {
@@ -558,9 +578,10 @@ async function fetchBusAlerts(feedCache) {
 function isAlertActive(alert, now) {
   const periods = alert.activePeriod || [];
   return !periods.length || periods.some((period) => {
-    const startsInTime = period.start == null || getEpochSeconds(period.start) <= now;
-    const hasNotEnded = period.end == null || getEpochSeconds(period.end) >= now;
-    return startsInTime && hasNotEnded;
+    // An unset start or end decodes as 0 (not null), meaning the period is open on that side.
+    const start = getEpochSeconds(period.start);
+    const end = getEpochSeconds(period.end);
+    return (!start || start <= now) && (!end || end >= now);
   });
 }
 
@@ -569,14 +590,15 @@ function matchServiceAlerts(alerts, favorite, mode) {
   const stationStopIds = data?.stopsByStation.get(favorite.stationId) || new Set([favorite.stationId]);
   const selectedRouteId = canonicalRoute(favorite.routeId);
   const now = Date.now() / 1000;
+  // An alert applies if it covers this route and either names no stop (route-wide, which is
+  // all the bus feed offers) or names this stop. Unset string fields decode as "".
   return alerts.filter((alert) => isAlertActive(alert, now)
-    && (alert.informedEntity || []).some((selector) => (
-      selector.routeId !== undefined
-      && selector.stopId !== undefined
-      && (selector.routeType == null || selector.routeType === (mode === 'bus' ? 3 : 0))
-      && canonicalRoute(selector.routeId) === selectedRouteId
-      && stationStopIds.has(selector.stopId)
-    )));
+    && (alert.informedEntity || []).some((selector) => {
+      const selectorRouteId = selector.routeId || selector.trip?.routeId;
+      return selectorRouteId
+        && canonicalRoute(selectorRouteId) === selectedRouteId
+        && (!selector.stopId || stationStopIds.has(selector.stopId));
+    }));
 }
 
 function findSubwayServiceAlerts(alerts, favorite) {
@@ -611,7 +633,8 @@ function renderServiceAlerts(card, alerts) {
     const summary = document.createElement('summary');
     const label = document.createElement('span');
     label.className = 'service-alert-label';
-    label.textContent = alert.alertType || (isDelayAlert(alert) ? 'Delays' : 'Service alert');
+    label.textContent = alert.alertType || getAlertSummary(alert)
+      || (isDelayAlert(alert) ? 'Delays' : 'Service alert');
     const header = document.createElement('span');
     header.className = 'service-alert-header';
     header.textContent = getTranslatedText(alert.headerText) || 'Service change';
@@ -620,7 +643,11 @@ function renderServiceAlerts(card, alerts) {
 
     const description = document.createElement('p');
     description.className = 'service-alert-description';
-    description.textContent = getTranslatedText(alert.descriptionText) || 'No additional details provided.';
+    const headerText = getTranslatedText(alert.headerText);
+    const descriptionText = getTranslatedText(alert.descriptionText);
+    description.textContent = (headerText && descriptionText.startsWith(headerText)
+      ? descriptionText.slice(headerText.length).trim()
+      : descriptionText) || 'No additional details provided.';
     details.append(description);
     container.append(details);
   }
