@@ -1,5 +1,6 @@
 import * as GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import Fuse from 'fuse.js';
+import { Reader } from 'protobufjs/minimal';
 
 const SUBWAY_FAVORITES_KEY = 'trackedSubwayStops';
 const BUS_FAVORITES_KEY = 'trackedBusStops';
@@ -476,15 +477,59 @@ async function fetchFeed(group, feedCache) {
   return request;
 }
 
+// The MTA tags each alert with a type string (e.g. "Planned - Express to Local") in its
+// Mercury extension (Alert field 1001, alert_type = 3). The standard bindings drop unknown
+// extensions, so read it from the raw bytes and match it back to alerts by entity id.
+function readMercuryAlertTypes(bytes) {
+  const types = new Map();
+  const walk = (buffer, onField) => {
+    const reader = new Reader(buffer);
+    while (reader.pos < reader.len) {
+      const tag = reader.uint32();
+      onField(tag >>> 3, tag & 7, reader);
+    }
+  };
+  try {
+    walk(bytes, (field, wire, reader) => {
+      if (field !== 2) return reader.skipType(wire);
+      let id = '';
+      let alertType = '';
+      walk(reader.bytes(), (entityField, entityWire, entityReader) => {
+        if (entityField === 1) id = entityReader.string();
+        else if (entityField === 5) {
+          walk(entityReader.bytes(), (alertField, alertWire, alertReader) => {
+            if (alertField !== 1001) return alertReader.skipType(alertWire);
+            walk(alertReader.bytes(), (mercuryField, mercuryWire, mercuryReader) => {
+              if (mercuryField === 3) alertType = mercuryReader.string();
+              else mercuryReader.skipType(mercuryWire);
+            });
+          });
+        } else entityReader.skipType(entityWire);
+      });
+      if (id && alertType) types.set(id, alertType);
+    });
+  } catch {
+    // Without the extension alerts still render, just with the generic label.
+  }
+  return types;
+}
+
 async function fetchServiceAlerts() {
   const feeds = await Promise.all(serviceAlertFeedUrls.map(async (url) => {
     const response = await fetchFeedResponse(url, 'Subway alerts');
     const bytes = new Uint8Array(await response.arrayBuffer());
-    return GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
+    return {
+      feed: GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes),
+      alertTypes: readMercuryAlertTypes(bytes)
+    };
   }));
-  return [...new Map(feeds.flatMap((feed) => (feed.entity || [])
+  return [...new Map(feeds.flatMap(({ feed, alertTypes }) => (feed.entity || [])
     .filter((entity) => entity.alert)
-    .map((entity) => [entity.id, { ...entity.alert, id: entity.id }]))).values()];
+    .map((entity) => [entity.id, {
+      ...entity.alert,
+      id: entity.id,
+      alertType: alertTypes.get(entity.id) || ''
+    }]))).values()];
 }
 
 async function fetchBusFeed(feedName, feedCache) {
@@ -566,7 +611,7 @@ function renderServiceAlerts(card, alerts) {
     const summary = document.createElement('summary');
     const label = document.createElement('span');
     label.className = 'service-alert-label';
-    label.textContent = isDelayAlert(alert) ? 'Delays' : 'Service alert';
+    label.textContent = alert.alertType || (isDelayAlert(alert) ? 'Delays' : 'Service alert');
     const header = document.createElement('span');
     header.className = 'service-alert-header';
     header.textContent = getTranslatedText(alert.headerText) || 'Service change';
