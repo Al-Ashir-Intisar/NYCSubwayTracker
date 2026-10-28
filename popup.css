@@ -57,7 +57,7 @@ main {
 
 .transit-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0;
   padding: 0 16px;
   border-bottom: 1px solid var(--line);

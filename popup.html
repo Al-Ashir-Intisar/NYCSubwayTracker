@@ -9,7 +9,7 @@
   <body>
     <header class="topbar">
       <div>
-        <p class="eyebrow">MTA REALTIME</p>
+        <p class="eyebrow">MTA + PATH REALTIME</p>
         <h1>Transit tracker</h1>
       </div>
     </header>
@@ -17,6 +17,7 @@
     <nav class="transit-tabs" role="tablist" aria-label="Transit type">
       <button id="subway-tab" class="transit-tab" type="button" role="tab" aria-selected="true" aria-controls="subway-panel">Subway</button>
       <button id="bus-tab" class="transit-tab" type="button" role="tab" aria-selected="false" aria-controls="bus-panel" tabindex="-1">Bus</button>
+      <button id="path-tab" class="transit-tab" type="button" role="tab" aria-selected="false" aria-controls="path-panel" tabindex="-1">PATH</button>
     </nav>
 
     <main>
@@ -85,6 +86,40 @@
           </div>
           <p id="bus-empty-state" class="empty-state">Add a bus stop and route to see arrivals.</p>
           <div id="bus-favorites" class="favorites" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section id="path-panel" class="transit-panel" role="tabpanel" aria-labelledby="path-tab" hidden>
+        <details id="path-selector" class="selector">
+          <summary class="selector-toggle">
+            <span>
+              <span class="selector-title">Track a PATH station</span>
+              <span class="selector-caption">Choose a station and direction</span>
+            </span>
+            <span class="toggle-mark" aria-hidden="true"></span>
+          </summary>
+          <div class="selector-body">
+            <label for="path-station-input">Station</label>
+            <div class="picker">
+              <input id="path-station-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="path-station-options" placeholder="Search PATH stations" autocomplete="off">
+              <ul id="path-station-options" class="picker-options" role="listbox" hidden></ul>
+            </div>
+            <label for="path-route-input">Direction</label>
+            <div class="picker">
+              <input id="path-route-input" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="path-route-options" placeholder="To New York, To New Jersey or both" autocomplete="off">
+              <ul id="path-route-options" class="picker-options" role="listbox" hidden></ul>
+            </div>
+            <button id="path-add-button" class="primary-button" type="button">Add PATH station</button>
+          </div>
+        </details>
+        <p id="path-load-status" class="status" role="status">Loading PATH stations...</p>
+        <section class="tracked" aria-labelledby="path-tracked-heading">
+          <div class="section-heading">
+            <h2 id="path-tracked-heading">Your PATH stations</h2>
+            <button id="path-refresh-button" class="text-button" type="button" title="Refresh PATH arrivals">Refresh</button>
+          </div>
+          <p id="path-empty-state" class="empty-state">Add a PATH station and direction to see arrivals.</p>
+          <div id="path-favorites" class="favorites" aria-live="polite"></div>
         </section>
       </section>
     </main>

@@ -1,9 +1,16 @@
 import * as GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import Fuse from 'fuse.js';
 import { Reader } from 'protobufjs/minimal';
+import { PATH_FEED_URL, buildPathData, findPathArrivals } from './path.js';
 
 const SUBWAY_FAVORITES_KEY = 'trackedSubwayStops';
 const BUS_FAVORITES_KEY = 'trackedBusStops';
+const PATH_FAVORITES_KEY = 'trackedPathStops';
+const FAVORITES_KEYS = {
+  subway: SUBWAY_FAVORITES_KEY,
+  bus: BUS_FAVORITES_KEY,
+  path: PATH_FAVORITES_KEY
+};
 const LEGACY_FAVORITES_KEY = 'trackedStops';
 const FEEDS_PATH = 'gtfs_subway/realtime_feed_apis.txt';
 const SERVICE_ALERT_FEEDS_PATH = 'gtfs_subway/service_alert_feeds.txt';
@@ -11,7 +18,7 @@ const STOPS_PATH = 'gtfs_subway/stops.txt';
 const ROUTES_PATH = 'gtfs_subway/routes.txt';
 const BUS_STOPS_PATH = 'gtfs_bus/stops.txt';
 const BUS_ROUTES_PATH = 'gtfs_bus/routes.txt';
-const REFRESH_INTERVAL_MS = 15_000;
+const REFRESH_INTERVAL_MS = 30_000;
 const FEED_REQUEST_TIMEOUT_MS = 12_000;
 const ROUTE_FEED_GROUP = {
   A: 'ACE', C: 'ACE', E: 'ACE',
@@ -25,9 +32,14 @@ const ROUTE_FEED_GROUP = {
 
 const subwayTab = document.querySelector('#subway-tab');
 const busTab = document.querySelector('#bus-tab');
+const pathTab = document.querySelector('#path-tab');
 const views = {
   subway: {
     mode: 'subway',
+    label: 'Subway',
+    stopNoun: 'station',
+    routeNoun: 'route',
+    tab: subwayTab,
     panel: document.querySelector('#subway-panel'),
     stationInput: document.querySelector('#subway-station-input'),
     stationOptions: document.querySelector('#subway-station-options'),
@@ -42,6 +54,10 @@ const views = {
   },
   bus: {
     mode: 'bus',
+    label: 'Bus',
+    stopNoun: 'bus stop',
+    routeNoun: 'route',
+    tab: busTab,
     panel: document.querySelector('#bus-panel'),
     stationInput: document.querySelector('#bus-station-input'),
     stationOptions: document.querySelector('#bus-station-options'),
@@ -53,13 +69,33 @@ const views = {
     favoritesContainer: document.querySelector('#bus-favorites'),
     emptyState: document.querySelector('#bus-empty-state'),
     data: null
+  },
+  path: {
+    mode: 'path',
+    label: 'PATH',
+    stopNoun: 'station',
+    routeNoun: 'direction',
+    routeLabel: (direction) => direction.route_long_name,
+    pickerLimit: 20, // few enough stations to list them all
+    tab: pathTab,
+    panel: document.querySelector('#path-panel'),
+    stationInput: document.querySelector('#path-station-input'),
+    stationOptions: document.querySelector('#path-station-options'),
+    routeInput: document.querySelector('#path-route-input'),
+    routeOptions: document.querySelector('#path-route-options'),
+    addButton: document.querySelector('#path-add-button'),
+    refreshButton: document.querySelector('#path-refresh-button'),
+    loadStatus: document.querySelector('#path-load-status'),
+    favoritesContainer: document.querySelector('#path-favorites'),
+    emptyState: document.querySelector('#path-empty-state'),
+    data: null
   }
 };
 
 let feedUrlsByGroup = new Map();
 let busFeedUrls = {};
 let serviceAlertFeedUrls = [];
-const favoritesByMode = { subway: [], bus: [] };
+const favoritesByMode = { subway: [], bus: [], path: [] };
 const loadingModes = new Set();
 
 function parseCsv(text) {
@@ -189,13 +225,18 @@ async function loadBusData() {
   return buildBusData(stopsText, routesText);
 }
 
+async function loadPathData() {
+  return buildPathData();
+}
+
 function initializeView(mode) {
   const view = views[mode];
   const { data } = view;
   attachPicker(view.stationInput, view.stationOptions, data.stations,
-    (station) => data.stationLabels.get(station.stop_id), (station) => station.stop_id);
+    (station) => data.stationLabels.get(station.stop_id), (station) => station.stop_id, view.pickerLimit);
   attachPicker(view.routeInput, view.routeOptions, [...data.routesById.values()],
-    (route) => `${route.route_short_name} · ${route.route_long_name}`, (route) => route.route_id);
+    view.routeLabel || ((route) => `${route.route_short_name} · ${route.route_long_name}`),
+    (route) => route.route_id, view.pickerLimit);
   view.addButton.disabled = false;
   view.loadStatus.textContent = `${data.stations.length.toLocaleString()} ${mode === 'bus' ? 'bus stops' : 'stations'} loaded.`;
 }
@@ -241,7 +282,7 @@ function buildTransitData(stopsText, routesText) {
   return { stations, stationById, stopsByStation, stationByStopId, routesById, stationLabels };
 }
 
-function attachPicker(input, list, items, labelFor, idFor) {
+function attachPicker(input, list, items, labelFor, idFor, maxResults = 12) {
   let matches = [];
   let activeIndex = -1;
   let fuse = new Fuse(items.map(labelFor));
@@ -263,7 +304,7 @@ function attachPicker(input, list, items, labelFor, idFor) {
     const query = input.value.trim();
     matches = (query
       ? fuse.search(query).map((result) => items[result.refIndex])
-      : items).slice(0, 12);
+      : items).slice(0, maxResults);
     list.replaceChildren();
     activeIndex = -1;
     input.removeAttribute('aria-activedescendant');
@@ -360,7 +401,7 @@ function addFavorite(mode) {
   const station = view.data.stationById.get(view.stationInput.dataset.selectedId);
   const route = view.data.routesById.get(view.routeInput.dataset.selectedId);
   if (!station || !route) {
-    view.loadStatus.textContent = `Choose a ${mode === 'bus' ? 'bus stop and route' : 'station and route'} from the search results.`;
+    view.loadStatus.textContent = `Choose a ${view.stopNoun} and ${view.routeNoun} from the search results.`;
     return;
   }
 
@@ -369,7 +410,7 @@ function addFavorite(mode) {
     favorite.stationId === station.stop_id
     && favorite.routeId === route.route_id
   ))) {
-    view.loadStatus.textContent = `That ${mode === 'bus' ? 'stop' : 'station'} and route are already tracked.`;
+    view.loadStatus.textContent = `That ${view.stopNoun} and ${view.routeNoun} are already tracked.`;
     return;
   }
 
@@ -382,13 +423,11 @@ function addFavorite(mode) {
   persistFavorites(mode);
   renderFavorites(mode);
   view.loadStatus.textContent = 'Stop added.';
-  if (mode === 'subway') refreshSubway();
-  else refreshBus();
+  refreshMode(mode);
 }
 
 function persistFavorites(mode) {
-  const key = mode === 'bus' ? BUS_FAVORITES_KEY : SUBWAY_FAVORITES_KEY;
-  chrome.storage.local.set({ [key]: favoritesByMode[mode] });
+  chrome.storage.local.set({ [FAVORITES_KEYS[mode]]: favoritesByMode[mode] });
 }
 
 function removeFavorite(mode, id) {
@@ -430,7 +469,8 @@ function renderFavorites(mode) {
     removeButton.className = 'remove-button';
     removeButton.type = 'button';
     removeButton.textContent = 'Remove';
-    removeButton.setAttribute('aria-label', `Remove ${favorite.routeId} at ${favorite.stationName}`);
+    const routeName = mode === 'path' ? route?.route_long_name : favorite.routeId;
+    removeButton.setAttribute('aria-label', `Remove ${routeName} at ${favorite.stationName}`);
     removeButton.addEventListener('click', () => removeFavorite(mode, favorite.id));
     header.append(badge, name, removeButton);
     card.append(header);
@@ -444,7 +484,7 @@ function toPlainText(text) {
   const breaks = text.replace(/<\/(p|li|ul|div)>|<br\s*\/?>/gi, '\n');
   const parsed = new DOMParser().parseFromString(breaks, 'text/html').body.textContent || '';
   return parsed
-    .replace(/[​-‍﻿]/g, '')
+    .replace(/[\u200b-\u200d\ufeff]/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -564,6 +604,26 @@ async function fetchBusFeed(feedName, feedCache) {
     return GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
   })();
   feedCache.set(cacheKey, request);
+  return request;
+}
+
+// The PATH feed is unofficial, so any failure gets one friendly explanation.
+async function fetchPathFeed(feedCache) {
+  if (feedCache.has('path')) return feedCache.get('path');
+
+  const request = (async () => {
+    let reason;
+    try {
+      const response = await fetchFeedResponse(PATH_FEED_URL, 'PATH arrivals');
+      const feed = await response.json().catch(() => null);
+      if (Array.isArray(feed?.results)) return feed;
+      reason = 'PATH sent an unexpected response.';
+    } catch (error) {
+      reason = error instanceof Error ? error.message : 'PATH could not be reached.';
+    }
+    throw new Error(`${reason} This feed is unofficial and may be down; try again shortly.`);
+  })();
+  feedCache.set('path', request);
   return request;
 }
 
@@ -702,11 +762,35 @@ function findBusArrivals(feed, favorite) {
   return findTransitArrivals(feed, favorite, 'bus');
 }
 
+// Black or white, whichever reads better on a line color (WCAG contrast).
+function readableTextColor(hex) {
+  const [red, green, blue] = [0, 2, 4].map((offset) => {
+    const channel = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  return 1.05 / (luminance + 0.05) > (luminance + 0.05) / 0.05 ? '#ffffff' : '#1a1a1a';
+}
+
+function colorMarker(element, color) {
+  if (!color) return;
+  element.style.background = `#${color}`;
+  element.style.color = readableTextColor(color);
+}
+
 function renderArrivalGroups(card, arrivals) {
   const groups = new Map();
   for (const arrival of arrivals) {
-    const key = `${arrival.direction}:${arrival.destination}`;
-    if (!groups.has(key)) groups.set(key, { direction: arrival.direction, destination: arrival.destination, arrivals: [] });
+    // PATH lines share a destination, so the line color is part of the grouping.
+    const key = `${arrival.direction}:${arrival.destination}:${arrival.color || ''}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        direction: arrival.direction,
+        destination: arrival.destination,
+        color: arrival.color,
+        arrivals: []
+      });
+    }
     const group = groups.get(key);
     if (group.arrivals.length < 3) group.arrivals.push(arrival);
   }
@@ -722,6 +806,7 @@ function renderArrivalGroups(card, arrivals) {
     marker.className = 'direction-marker';
     marker.textContent = group.direction || '?';
     marker.setAttribute('aria-label', group.direction ? `${group.direction} direction` : 'Direction unavailable');
+    colorMarker(marker, group.color);
     const destination = document.createElement('span');
     destination.textContent = `To ${group.destination}`;
     heading.append(marker, destination);
@@ -737,6 +822,7 @@ function renderArrivalGroups(card, arrivals) {
       const direction = document.createElement('span');
       direction.className = 'arrival-direction';
       direction.textContent = group.direction || '?';
+      colorMarker(direction, group.color);
       const time = document.createElement('span');
       time.textContent = minutes < 1 ? 'Due' : `${minutes} min`;
       item.append(direction, time);
@@ -771,8 +857,8 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
           const status = document.createElement('p');
           status.className = 'service-alert-error';
           status.textContent = result.error instanceof Error
-            ? `${view.mode === 'bus' ? 'Bus' : 'Subway'} alerts unavailable: ${result.error.message}`
-            : `${view.mode === 'bus' ? 'Bus' : 'Subway'} alerts unavailable.`;
+            ? `${view.label} alerts unavailable: ${result.error.message}`
+            : `${view.label} alerts unavailable.`;
           card.append(status);
           return;
         }
@@ -798,7 +884,7 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
         } catch (error) {
           card.querySelector('.arrival-status')?.remove();
           setArrivalStatus(card, error instanceof Error
-            ? `${view.mode === 'bus' ? 'Bus' : 'Subway'} arrivals unavailable: ${error.message}`
+            ? `${view.label} arrivals unavailable: ${error.message}`
             : `Unable to load ${view.mode} arrivals.`, true);
         }
       })();
@@ -834,54 +920,65 @@ function refreshBus() {
   );
 }
 
+function refreshPath() {
+  return refreshView(
+    views.path,
+    async () => [],
+    (_favorite, feedCache) => fetchPathFeed(feedCache),
+    () => [],
+    (feed, favorite) => findPathArrivals(feed, favorite)
+  );
+}
+
+const refreshers = { subway: refreshSubway, bus: refreshBus, path: refreshPath };
+
+function refreshMode(mode) {
+  return refreshers[mode]();
+}
+
 function refreshTrackedModes() {
-  return Promise.all([
-    favoritesByMode.subway.length ? refreshSubway() : Promise.resolve(),
-    favoritesByMode.bus.length ? refreshBus() : Promise.resolve()
-  ]);
+  return Promise.all(Object.keys(views).map((mode) => (
+    favoritesByMode[mode].length ? refreshMode(mode) : Promise.resolve()
+  )));
 }
 
 function selectMode(mode) {
   for (const [viewMode, view] of Object.entries(views)) {
     const selected = viewMode === mode;
     view.panel.hidden = !selected;
-    const tab = viewMode === 'subway' ? subwayTab : busTab;
-    tab.setAttribute('aria-selected', String(selected));
-    tab.tabIndex = selected ? 0 : -1;
+    view.tab.setAttribute('aria-selected', String(selected));
+    view.tab.tabIndex = selected ? 0 : -1;
   }
   if (!views[mode].data) {
     loadModeData(mode);
-  } else if (mode === 'subway') {
-    refreshSubway();
   } else {
-    refreshBus();
+    refreshMode(mode);
   }
 }
 
-subwayTab.addEventListener('click', () => selectMode('subway'));
-busTab.addEventListener('click', () => selectMode('bus'));
-subwayTab.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowRight') {
-    busTab.focus();
-    selectMode('bus');
-  }
-});
-busTab.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowLeft') {
-    subwayTab.focus();
-    selectMode('subway');
-  }
-});
+const modeOrder = Object.keys(views);
+for (const mode of modeOrder) {
+  views[mode].tab.addEventListener('click', () => selectMode(mode));
+  views[mode].tab.addEventListener('keydown', (event) => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    if (!step) return;
+    const next = modeOrder[(modeOrder.indexOf(mode) + step + modeOrder.length) % modeOrder.length];
+    views[next].tab.focus();
+    selectMode(next);
+  });
+}
 for (const mode of Object.keys(views)) {
   views[mode].addButton.addEventListener('click', () => addFavorite(mode));
 }
-views.subway.refreshButton.addEventListener('click', refreshSubway);
-views.bus.refreshButton.addEventListener('click', refreshBus);
+for (const mode of Object.keys(views)) {
+  views[mode].refreshButton.addEventListener('click', () => refreshMode(mode));
+}
 
 async function loadFavorites() {
   const storedValues = await chrome.storage.local.get([
     SUBWAY_FAVORITES_KEY,
     BUS_FAVORITES_KEY,
+    PATH_FAVORITES_KEY,
     LEGACY_FAVORITES_KEY
   ]);
   const oldFavorites = storedValues[LEGACY_FAVORITES_KEY] || [];
@@ -889,22 +986,23 @@ async function loadFavorites() {
     || oldFavorites.filter((favorite) => !favorite.mode || favorite.mode === 'subway');
   favoritesByMode.bus = storedValues[BUS_FAVORITES_KEY]
     || oldFavorites.filter((favorite) => favorite.mode === 'bus');
+  favoritesByMode.path = storedValues[PATH_FAVORITES_KEY] || [];
 
   chrome.storage.local.set({
     [SUBWAY_FAVORITES_KEY]: favoritesByMode.subway,
-    [BUS_FAVORITES_KEY]: favoritesByMode.bus
+    [BUS_FAVORITES_KEY]: favoritesByMode.bus,
+    [PATH_FAVORITES_KEY]: favoritesByMode.path
   });
   if (oldFavorites.length) chrome.storage.local.remove(LEGACY_FAVORITES_KEY);
 
   for (const mode of Object.keys(views)) {
     if (!views[mode].data) continue;
     renderFavorites(mode);
-    if (favoritesByMode[mode].length) {
-      if (mode === 'subway') refreshSubway();
-      else refreshBus();
-    }
+    if (favoritesByMode[mode].length) refreshMode(mode);
   }
 }
+
+const dataLoaders = { subway: loadSubwayData, bus: loadBusData, path: loadPathData };
 
 async function loadModeData(mode) {
   const view = views[mode];
@@ -914,13 +1012,10 @@ async function loadModeData(mode) {
   view.loadStatus.removeAttribute('data-error');
   view.loadStatus.textContent = `Loading ${mode} routes and stops...`;
   try {
-    view.data = mode === 'subway' ? await loadSubwayData() : await loadBusData();
+    view.data = await dataLoaders[mode]();
     initializeView(mode);
     renderFavorites(mode);
-    if (favoritesByMode[mode].length) {
-      if (mode === 'subway') refreshSubway();
-      else refreshBus();
-    }
+    if (favoritesByMode[mode].length) refreshMode(mode);
   } catch (error) {
     view.loadStatus.dataset.error = 'true';
     view.loadStatus.textContent = error instanceof Error
@@ -935,6 +1030,7 @@ async function loadModeData(mode) {
 Promise.allSettled([
   loadModeData('subway'),
   loadModeData('bus'),
+  loadModeData('path'),
   loadFavorites().catch((error) => {
     const message = error instanceof Error ? error.message : 'Unable to load saved stops.';
     for (const view of Object.values(views)) {
