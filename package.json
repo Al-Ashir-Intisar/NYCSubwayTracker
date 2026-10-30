@@ -3,7 +3,11 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "build:extension": "node scripts/build.mjs extension",
+    "build:web": "node scripts/build.mjs web",
+    "dev": "node scripts/build.mjs web && wrangler dev",
+    "deploy": "node scripts/build.mjs web && wrangler deploy"
   },
   "dependencies": {
     "fuse.js": "^7.5.0",
@@ -11,6 +15,7 @@
     "protobufjs": "^7.6.6"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "wrangler": "4.86.0"
   }
 }

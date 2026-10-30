@@ -2,6 +2,10 @@ import * as GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import Fuse from 'fuse.js';
 import { Reader } from 'protobufjs/minimal';
 import { PATH_FEED_URL, buildPathData, findPathArrivals } from './path.js';
+// Resolved by the build to src/platform/extension.js or src/platform/web.js.
+import {
+  assetUrl, feedUrl, busFeedUrls as configuredBusFeedUrls, busStopMonitoringUrl, storage
+} from 'platform';
 
 const SUBWAY_FAVORITES_KEY = 'trackedSubwayStops';
 const BUS_FAVORITES_KEY = 'trackedBusStops';
@@ -145,7 +149,7 @@ function parseCsv(text) {
 }
 
 async function loadText(path) {
-  const response = await fetch(chrome.runtime.getURL(path));
+  const response = await fetch(assetUrl(path));
   if (!response.ok) throw new Error(`Unable to read ${path} (HTTP ${response.status}).`);
   return response.text();
 }
@@ -153,7 +157,7 @@ async function loadText(path) {
 async function fetchFeedResponse(url, feedName) {
   let response;
   try {
-    response = await fetch(url, {
+    response = await fetch(feedUrl(url), {
       cache: 'no-store',
       signal: AbortSignal.timeout(FEED_REQUEST_TIMEOUT_MS)
     });
@@ -218,8 +222,8 @@ async function loadBusData() {
     loadText(BUS_STOPS_PATH),
     loadText(BUS_ROUTES_PATH)
   ]);
-  busFeedUrls = globalThis.NYC_BUS_FEED_URLS || {};
-  if (!busFeedUrls.tripUpdates || !busFeedUrls.alerts) {
+  busFeedUrls = configuredBusFeedUrls();
+  if ((!busStopMonitoringUrl && !busFeedUrls.tripUpdates) || !busFeedUrls.alerts) {
     throw new Error('Bus API key configuration is missing. Set MTA_BUS_API_KEY in .dev.vars and run npm run build.');
   }
   return buildBusData(stopsText, routesText);
@@ -427,7 +431,7 @@ function addFavorite(mode) {
 }
 
 function persistFavorites(mode) {
-  chrome.storage.local.set({ [FAVORITES_KEYS[mode]]: favoritesByMode[mode] });
+  storage.set({ [FAVORITES_KEYS[mode]]: favoritesByMode[mode] });
 }
 
 function removeFavorite(mode, id) {
@@ -605,6 +609,35 @@ async function fetchBusFeed(feedName, feedCache) {
   })();
   feedCache.set(cacheKey, request);
   return request;
+}
+
+async function fetchBusStopMonitoring(favorite) {
+  const route = views.bus.data.routesById.get(favorite.routeId);
+  const response = await fetchFeedResponse(
+    busStopMonitoringUrl(favorite.stationId, `${route?.agency_id || 'MTA NYCT'}_${favorite.routeId}`),
+    'Bus data'
+  );
+  const delivery = (await response.json()).Siri?.ServiceDelivery?.StopMonitoringDelivery?.[0];
+  const error = delivery?.ErrorCondition?.Description;
+  if (error) throw new Error(error);
+  return delivery?.MonitoredStopVisit || [];
+}
+
+// Only predicted times count; visits with just a scheduled (aimed) time are left out, as in
+// the GTFS trip-updates feed.
+function findStopMonitoringArrivals(visits) {
+  const now = Date.now() / 1000;
+  return visits.map((visit) => {
+    const journey = visit.MonitoredVehicleJourney || {};
+    const call = journey.MonitoredCall || {};
+    return {
+      epoch: Date.parse(call.ExpectedArrivalTime || call.ExpectedDepartureTime || '') / 1000,
+      direction: '',
+      destination: journey.DestinationName?.[0] || 'Destination unavailable'
+    };
+  })
+    .filter((arrival) => Number.isFinite(arrival.epoch) && arrival.epoch >= now - 30 && arrival.epoch <= now + 2 * 60 * 60)
+    .sort((left, right) => left.epoch - right.epoch);
 }
 
 // The PATH feed is unofficial, so any failure gets one friendly explanation.
@@ -914,9 +947,11 @@ function refreshBus() {
   return refreshView(
     views.bus,
     fetchBusAlerts,
-    (_favorite, feedCache) => fetchBusFeed('tripUpdates', feedCache),
+    (favorite, feedCache) => (busStopMonitoringUrl
+      ? fetchBusStopMonitoring(favorite)
+      : fetchBusFeed('tripUpdates', feedCache)),
     findBusServiceAlerts,
-    findBusArrivals
+    busStopMonitoringUrl ? findStopMonitoringArrivals : findBusArrivals
   );
 }
 
@@ -975,7 +1010,7 @@ for (const mode of Object.keys(views)) {
 }
 
 async function loadFavorites() {
-  const storedValues = await chrome.storage.local.get([
+  const storedValues = await storage.get([
     SUBWAY_FAVORITES_KEY,
     BUS_FAVORITES_KEY,
     PATH_FAVORITES_KEY,
@@ -988,12 +1023,12 @@ async function loadFavorites() {
     || oldFavorites.filter((favorite) => favorite.mode === 'bus');
   favoritesByMode.path = storedValues[PATH_FAVORITES_KEY] || [];
 
-  chrome.storage.local.set({
+  storage.set({
     [SUBWAY_FAVORITES_KEY]: favoritesByMode.subway,
     [BUS_FAVORITES_KEY]: favoritesByMode.bus,
     [PATH_FAVORITES_KEY]: favoritesByMode.path
   });
-  if (oldFavorites.length) chrome.storage.local.remove(LEGACY_FAVORITES_KEY);
+  if (oldFavorites.length) storage.remove(LEGACY_FAVORITES_KEY);
 
   for (const mode of Object.keys(views)) {
     if (!views[mode].data) continue;
@@ -1038,4 +1073,12 @@ Promise.allSettled([
     }
   })
 ]);
-window.setInterval(refreshTrackedModes, REFRESH_INTERVAL_MS);
+// Poll only while the page is visible; a phone that was locked or switched away gets fresh
+// arrivals as soon as it comes back.
+let refreshTimer = window.setInterval(refreshTrackedModes, REFRESH_INTERVAL_MS);
+document.addEventListener('visibilitychange', () => {
+  window.clearInterval(refreshTimer);
+  if (document.hidden) return;
+  refreshTrackedModes();
+  refreshTimer = window.setInterval(refreshTrackedModes, REFRESH_INTERVAL_MS);
+});

@@ -10,6 +10,16 @@ A Chrome extension for tracking realtime arrival predictions for selected NYC su
 4. In Chrome, open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**. Select this repository directory.
 5. Use the separate Subway, Bus and PATH tabs to choose a station/stop and route (or, for PATH, a direction), then add it to that mode's tracked list.
 
+## Run the web app (phones and desktop)
+
+The same app also runs as an installable web app (PWA), served by a Cloudflare Worker that also proxies the live feeds, since browsers can't call the MTA and PATH feeds directly and the bus API key must stay on the server.
+
+1. Put `MTA_BUS_API_KEY=your-key` in `.dev.vars` (the Worker reads it locally as a secret).
+2. Run `npm run dev` and open http://localhost:8787.
+3. Deploy with `npm run deploy` after setting the production key once with `npx wrangler secret put MTA_BUS_API_KEY`.
+
+On a phone, open the deployed URL and choose **Add to Home Screen** (Safari share menu on iPhone, browser menu on Android). Saved stops are kept in that browser. The Worker serves only the feeds listed in `gtfs_subway/` and caches each one for 20 seconds, so users share upstream requests. Platform differences between the two builds live in `src/platform/`; web-only files (styles, service worker, manifest, icons) live in `web/`. Wrangler is pinned to 4.86.0 because later versions need Node 22.
+
 ## Features
 
 - Use separate Subway and Bus tabs, each with its own stop search, route search, saved stops, and arrival results.

@@ -1,0 +1,190 @@
+/* Web app overrides for popup.css: a full-page layout instead of the 360px extension popup,
+   larger touch targets, and a bottom tab bar within thumb reach on phones. */
+
+:root {
+  --content-width: 620px;
+  --tab-bar-height: 60px;
+}
+
+html {
+  background: #f3f4ef;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  width: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  max-height: none;
+  overflow-y: visible;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.topbar {
+  padding: calc(18px + env(safe-area-inset-top)) max(18px, calc((100% - var(--content-width)) / 2 + 18px)) 16px;
+}
+
+.transit-tabs {
+  padding: 0 max(16px, calc((100% - var(--content-width)) / 2 + 16px));
+}
+
+main,
+.popup-footer {
+  max-width: var(--content-width);
+  margin: 0 auto;
+}
+
+main {
+  padding: 16px max(16px, env(safe-area-inset-right)) 20px max(16px, env(safe-area-inset-left));
+}
+
+h1 {
+  font-size: 24px;
+}
+
+h2 {
+  font-size: 17px;
+}
+
+.transit-tab {
+  min-height: 46px;
+  font-size: 15px;
+}
+
+.selector-toggle {
+  min-height: 48px;
+}
+
+.selector-title {
+  font-size: 17px;
+}
+
+.selector-caption,
+.status,
+.empty-state,
+label {
+  font-size: 13px;
+}
+
+/* 16px keeps iOS Safari from zooming the page when an input gets focus. */
+.picker input {
+  min-height: 46px;
+  font-size: 16px;
+}
+
+.picker-options {
+  max-height: 260px;
+}
+
+.picker-option,
+.picker-empty {
+  padding: 11px 10px;
+  font-size: 15px;
+}
+
+.primary-button {
+  min-height: 46px;
+  font-size: 15px;
+}
+
+.text-button {
+  min-height: 40px;
+  padding: 8px 0 8px 12px;
+  font-size: 14px;
+}
+
+.favorites {
+  gap: 10px;
+}
+
+.favorite {
+  padding: 12px;
+}
+
+.route-badge {
+  min-width: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+
+.station-name {
+  margin-top: 4px;
+  font-size: 16px;
+}
+
+.remove-button {
+  min-height: 36px;
+  margin: -6px -4px -6px 0;
+  padding: 6px 4px 6px 10px;
+  font-size: 13px;
+}
+
+.service-alerts,
+.service-alert-error,
+.arrival-status,
+.arrival-groups {
+  margin-left: 38px;
+}
+
+.service-alert,
+.service-alert-error,
+.arrival-status,
+.arrival-destination {
+  font-size: 13px;
+}
+
+.direction-marker,
+.arrival-direction {
+  flex-basis: 20px;
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+
+.arrival-time {
+  min-height: 30px;
+  font-size: 14px;
+}
+
+.popup-footer {
+  padding: 14px 18px 18px;
+  font-size: 13px;
+}
+
+@media (hover: hover) {
+  .picker-option:hover {
+    background: #e8f2ed;
+  }
+}
+
+@media (max-width: 700px) {
+  body {
+    padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom));
+  }
+
+  .transit-tabs {
+    position: fixed;
+    z-index: 10;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    padding: 0 0 env(safe-area-inset-bottom);
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+    background: rgb(243 244 239 / 96%);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+
+  .transit-tab {
+    min-height: var(--tab-bar-height);
+    border: 0;
+    border-radius: 0;
+  }
+
+  .transit-tab[aria-selected="true"] {
+    top: 0;
+    background: transparent;
+    box-shadow: inset 0 3px 0 var(--accent);
+  }
+}
