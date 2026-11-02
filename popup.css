@@ -303,6 +303,8 @@ button {
 }
 
 .favorite {
+  display: flex;
+  flex-direction: column;
   padding: 10px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--route-color, var(--accent));
@@ -392,6 +394,24 @@ button {
   margin: 5px 0 0;
   color: #604c27;
   white-space: pre-line;
+}
+
+/* Alerts about other lines that mention this one: quiet, and always after the arrivals. */
+.related-alerts {
+  order: 1;
+  margin: 8px 0 0 32px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+
+.related-alerts .service-alert,
+.related-alerts .service-alert-label,
+.related-alerts .service-alert-description {
+  color: var(--muted);
+}
+
+.related-alerts .service-alert + .service-alert {
+  border-top-color: var(--line);
 }
 
 .service-alert-error {

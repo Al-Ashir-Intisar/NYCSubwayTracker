@@ -698,6 +698,22 @@ function findSubwayServiceAlerts(alerts, favorite) {
   return matchServiceAlerts(alerts, favorite, 'subway');
 }
 
+// Headlines name lines like "[C]". An alert about another line can still matter to this one,
+// e.g. "[C] is suspended - take the [A] instead" sends C riders to the A, which may then make
+// extra stops. These show as a quiet note wherever the line is tracked, whatever the station.
+// Descriptions are left out because they list transfers to many lines.
+function findRelatedSubwayAlerts(alerts, favorite) {
+  const selectedRouteId = canonicalRoute(favorite.routeId);
+  const now = Date.now() / 1000;
+  return alerts.filter((alert) => isAlertActive(alert, now)
+    && [...getTranslatedText(alert.headerText).matchAll(/\[([A-Z0-9]{1,3})\]/g)]
+      .some((match) => canonicalRoute(match[1]) === selectedRouteId)
+    && !(alert.informedEntity || []).some((selector) => {
+      const selectorRouteId = selector.routeId || selector.trip?.routeId;
+      return selectorRouteId && canonicalRoute(selectorRouteId) === selectedRouteId;
+    }));
+}
+
 function findBusServiceAlerts(alerts, favorite) {
   return matchServiceAlerts(alerts, favorite, 'bus');
 }
@@ -707,16 +723,27 @@ function isDelayAlert(alert) {
     || /delay/i.test(getTranslatedText(alert.headerText));
 }
 
-function renderServiceAlerts(card, alerts) {
+function removeServiceAlerts(card) {
+  card.querySelectorAll('.service-alerts, .service-alert-error, .related-alerts')
+    .forEach((element) => element.remove());
+}
+
+// Related alerts (see findRelatedSubwayAlerts) don't highlight the card.
+function renderServiceAlerts(card, alerts, relatedAlerts = []) {
   const expandedAlertIds = new Set(
     [...card.querySelectorAll('.service-alert[open]')].map((item) => item.dataset.alertId)
   );
-  card.querySelector('.service-alerts, .service-alert-error')?.remove();
+  removeServiceAlerts(card);
   card.classList.toggle('has-alert', alerts.length > 0);
-  if (!alerts.length) return;
+  if (alerts.length) card.append(buildAlertList('service-alerts', alerts, expandedAlertIds));
+  if (relatedAlerts.length) {
+    card.append(buildAlertList('related-alerts', relatedAlerts, expandedAlertIds, 'Related'));
+  }
+}
 
+function buildAlertList(className, alerts, expandedAlertIds, labelText) {
   const container = document.createElement('div');
-  container.className = 'service-alerts';
+  container.className = className;
   for (const alert of alerts) {
     const details = document.createElement('details');
     details.className = 'service-alert';
@@ -726,7 +753,7 @@ function renderServiceAlerts(card, alerts) {
     const summary = document.createElement('summary');
     const label = document.createElement('span');
     label.className = 'service-alert-label';
-    label.textContent = alert.alertType || getAlertSummary(alert)
+    label.textContent = labelText || alert.alertType || getAlertSummary(alert)
       || (isDelayAlert(alert) ? 'Delays' : 'Service alert');
     const header = document.createElement('span');
     header.className = 'service-alert-header';
@@ -744,7 +771,7 @@ function renderServiceAlerts(card, alerts) {
     details.append(description);
     container.append(details);
   }
-  card.append(container);
+  return container;
 }
 
 function findTransitArrivals(feed, favorite, mode) {
@@ -866,7 +893,7 @@ function renderArrivalGroups(card, arrivals) {
   }
 }
 
-async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrivals) {
+async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrivals, findRelatedAlerts = () => []) {
   const favorites = favoritesByMode[view.mode];
   if (view.refreshButton.disabled || !favorites.length || !view.data) return;
   view.refreshButton.disabled = true;
@@ -886,7 +913,7 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
       const alertUpdate = alertResult.then((result) => {
         if (result.error) {
           card.classList.remove('has-alert');
-          card.querySelector('.service-alerts, .service-alert-error')?.remove();
+          removeServiceAlerts(card);
           const status = document.createElement('p');
           status.className = 'service-alert-error';
           status.textContent = result.error instanceof Error
@@ -896,7 +923,7 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
           return;
         }
 
-        renderServiceAlerts(card, findAlerts(result.alerts, favorite));
+        renderServiceAlerts(card, findAlerts(result.alerts, favorite), findRelatedAlerts(result.alerts, favorite));
       });
 
       const arrivalUpdate = (async () => {
@@ -939,7 +966,8 @@ function refreshSubway() {
       return fetchFeed(group, feedCache);
     },
     findSubwayServiceAlerts,
-    findSubwayArrivals
+    findSubwayArrivals,
+    findRelatedSubwayAlerts
   );
 }
 

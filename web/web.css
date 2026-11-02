@@ -122,7 +122,8 @@ label {
 .service-alerts,
 .service-alert-error,
 .arrival-status,
-.arrival-groups {
+.arrival-groups,
+.related-alerts {
   margin-left: 38px;
 }
 
