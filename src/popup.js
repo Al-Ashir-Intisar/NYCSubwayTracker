@@ -437,7 +437,50 @@ function persistFavorites(mode) {
 function removeFavorite(mode, id) {
   favoritesByMode[mode] = favoritesByMode[mode].filter((favorite) => favorite.id !== id);
   persistFavorites(mode);
-  renderFavorites(mode);
+  findCard(mode, id)?.remove();
+  views[mode].emptyState.hidden = favoritesByMode[mode].length > 0;
+  updateMoveButtons(mode);
+}
+
+function findCard(mode, id) {
+  return [...views[mode].favoritesContainer.children].find((element) => element.dataset.favoriteId === id);
+}
+
+function setCollapsed(mode, id, collapsed) {
+  const favorite = favoritesByMode[mode].find((item) => item.id === id);
+  if (!favorite) return;
+  favorite.collapsed = collapsed;
+  persistFavorites(mode);
+  const card = findCard(mode, id);
+  card?.classList.toggle('collapsed', collapsed);
+  card?.querySelector('.card-toggle')?.setAttribute('aria-expanded', String(!collapsed));
+}
+
+// Cards move in place, so their arrivals stay on screen until the next refresh.
+function moveFavorite(mode, id, step) {
+  const favorites = favoritesByMode[mode];
+  const index = favorites.findIndex((favorite) => favorite.id === id);
+  const target = index + step;
+  if (index < 0 || target < 0 || target >= favorites.length) return;
+  [favorites[index], favorites[target]] = [favorites[target], favorites[index]];
+  persistFavorites(mode);
+
+  const card = findCard(mode, id);
+  const neighbor = findCard(mode, favorites[index].id);
+  if (step < 0) neighbor.before(card);
+  else neighbor.after(card);
+  updateMoveButtons(mode);
+  // Moving the card can drop focus; keep it on the same button, or its partner at the ends.
+  const button = card.querySelector(step < 0 ? '.move-up' : '.move-down');
+  (button.disabled ? card.querySelector(step < 0 ? '.move-down' : '.move-up') : button)?.focus();
+}
+
+function updateMoveButtons(mode) {
+  const cards = [...views[mode].favoritesContainer.children];
+  cards.forEach((card, index) => {
+    card.querySelector('.move-up').disabled = index === 0;
+    card.querySelector('.move-down').disabled = index === cards.length - 1;
+  });
 }
 
 function setArrivalStatus(container, message, isError = false) {
@@ -445,6 +488,16 @@ function setArrivalStatus(container, message, isError = false) {
   status.className = isError ? 'arrival-status arrival-error' : 'arrival-status';
   status.textContent = message;
   container.append(status);
+}
+
+function createActionButton(className, text, label, onClick) {
+  const button = document.createElement('button');
+  button.className = className;
+  button.type = 'button';
+  button.textContent = text;
+  button.setAttribute('aria-label', label);
+  button.addEventListener('click', onClick);
+  return button;
 }
 
 function renderFavorites(mode) {
@@ -455,30 +508,100 @@ function renderFavorites(mode) {
 
   for (const favorite of favorites) {
     const route = view.data.routesById.get(favorite.routeId);
+    const routeName = mode === 'path' ? route?.route_long_name : favorite.routeId;
+    const cardLabel = `${routeName} at ${favorite.stationName}`;
     const card = document.createElement('article');
-    card.className = 'favorite';
+    card.className = favorite.collapsed ? 'favorite collapsed' : 'favorite';
     card.dataset.favoriteId = favorite.id;
     card.style.setProperty('--route-color', routeColor(route));
     card.style.setProperty('--route-text', routeTextColor(route));
 
+    // The whole header is the expand/collapse control; a collapsed card keeps the next
+    // arrivals in it (see renderArrivalSummary).
     const header = document.createElement('div');
     header.className = 'favorite-header';
+    const name = document.createElement('h3');
+    name.className = 'station-name';
+    const toggle = document.createElement('button');
+    toggle.className = 'card-toggle';
+    toggle.type = 'button';
+    toggle.setAttribute('aria-expanded', String(!favorite.collapsed));
     const badge = document.createElement('span');
     badge.className = 'route-badge';
     badge.textContent = route?.route_short_name || favorite.routeId;
-    const name = document.createElement('h3');
-    name.className = 'station-name';
-    name.textContent = favorite.stationName;
-    const removeButton = document.createElement('button');
-    removeButton.className = 'remove-button';
-    removeButton.type = 'button';
-    removeButton.textContent = 'Remove';
-    const routeName = mode === 'path' ? route?.route_long_name : favorite.routeId;
-    removeButton.setAttribute('aria-label', `Remove ${routeName} at ${favorite.stationName}`);
-    removeButton.addEventListener('click', () => removeFavorite(mode, favorite.id));
-    header.append(badge, name, removeButton);
-    card.append(header);
+    const title = document.createElement('span');
+    title.className = 'card-title';
+    const stationName = document.createElement('span');
+    stationName.textContent = favorite.stationName;
+    const summary = document.createElement('span');
+    summary.className = 'arrival-summary';
+    title.append(stationName, summary);
+    const chevron = document.createElement('span');
+    chevron.className = 'card-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    toggle.append(badge, title, chevron);
+    toggle.addEventListener('click', () => (
+      setCollapsed(mode, favorite.id, !card.classList.contains('collapsed'))
+    ));
+    name.append(toggle);
+
+    // Reordering and removing are occasional, so they sit behind a "more" button.
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    actions.id = `${mode}-actions-${favorite.id}`;
+    actions.hidden = true;
+    actions.append(
+      createActionButton('card-action move-up', 'Move up', `Move ${cardLabel} up`,
+        () => moveFavorite(mode, favorite.id, -1)),
+      createActionButton('card-action move-down', 'Move down', `Move ${cardLabel} down`,
+        () => moveFavorite(mode, favorite.id, 1)),
+      createActionButton('card-action remove-button', 'Remove', `Remove ${cardLabel}`,
+        () => removeFavorite(mode, favorite.id))
+    );
+    const moreButton = createActionButton('more-button', '⋯', `Options for ${cardLabel}`, () => {
+      actions.hidden = !actions.hidden;
+      moreButton.setAttribute('aria-expanded', String(!actions.hidden));
+    });
+    moreButton.setAttribute('aria-expanded', 'false');
+    moreButton.setAttribute('aria-controls', actions.id);
+
+    header.append(name, moreButton);
+    card.append(header, actions);
     view.favoritesContainer.append(card);
+  }
+  updateMoveButtons(mode);
+}
+
+// The soonest arrival in each direction (or to each destination when there is no
+// direction), for the header of a collapsed card. PATH lines share a direction, so their
+// color keeps them apart.
+function renderArrivalSummary(card, arrivals, message = '') {
+  const summary = card.querySelector('.arrival-summary');
+  if (!summary) return;
+  summary.replaceChildren();
+  if (message) {
+    summary.textContent = message;
+    return;
+  }
+  const soonest = new Map();
+  for (const arrival of arrivals) {
+    const key = arrival.direction ? `${arrival.direction}:${arrival.color || ''}` : arrival.destination;
+    if (!soonest.has(key)) soonest.set(key, arrival);
+  }
+  for (const arrival of [...soonest.values()].slice(0, 3)) {
+    const minutes = Math.max(0, Math.round((arrival.epoch * 1000 - Date.now()) / 60_000));
+    const item = document.createElement('span');
+    item.className = 'summary-time';
+    item.dataset.direction = arrival.direction;
+    if (arrival.direction) {
+      const marker = document.createElement('span');
+      marker.className = 'arrival-direction';
+      marker.textContent = arrival.direction;
+      colorMarker(marker, arrival.color);
+      item.append(marker);
+    }
+    item.append(minutes < 1 ? 'Due' : `${minutes} min`);
+    summary.append(item);
   }
 }
 
@@ -934,8 +1057,10 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
           card.querySelector('.arrival-status')?.remove();
           if (!arrivals.length) {
             setArrivalStatus(card, 'No upcoming predictions at this stop.');
+            renderArrivalSummary(card, [], 'No predictions');
             return;
           }
+          renderArrivalSummary(card, arrivals);
 
           const groups = document.createElement('div');
           groups.className = 'arrival-groups';
@@ -943,6 +1068,7 @@ async function refreshView(view, getAlerts, getArrivals, findAlerts, findArrival
           renderArrivalGroups(groups, arrivals);
         } catch (error) {
           card.querySelector('.arrival-status')?.remove();
+          renderArrivalSummary(card, [], 'Arrivals unavailable');
           setArrivalStatus(card, error instanceof Error
             ? `${view.label} arrivals unavailable: ${error.message}`
             : `Unable to load ${view.mode} arrivals.`, true);
