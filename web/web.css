@@ -108,22 +108,44 @@ label {
 }
 
 .station-name {
-  margin-top: 4px;
   font-size: 16px;
 }
 
-.remove-button {
-  min-height: 36px;
-  margin: -6px -4px -6px 0;
-  padding: 6px 4px 6px 10px;
-  font-size: 13px;
+.card-title {
+  padding-top: 4px;
+}
+
+.card-chevron {
+  margin-top: 11px;
+}
+
+.collapsed .card-chevron {
+  margin-top: 8px;
+}
+
+.collapsed .arrival-summary {
+  font-size: 14px;
+}
+
+.more-button {
+  width: 40px;
+  height: 36px;
+  margin: -3px -8px -3px 0;
+  font-size: 20px;
+}
+
+.card-action {
+  min-height: 40px;
+  padding: 6px 14px;
+  font-size: 14px;
 }
 
 .service-alerts,
 .service-alert-error,
 .arrival-status,
 .arrival-groups,
-.related-alerts {
+.related-alerts,
+.card-actions {
   margin-left: 38px;
 }
 

@@ -340,21 +340,137 @@ button {
 
 .station-name {
   flex: 1;
-  margin: 1px 0 0;
+  min-width: 0;
+  margin: 0;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.3;
 }
 
-.remove-button {
-  padding: 1px 0 1px 5px;
+.card-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
   border: 0;
   background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.card-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.card-chevron {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin: 8px 4px 0;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-135deg);
+}
+
+.collapsed .card-chevron {
+  margin-top: 5px;
+  transform: rotate(45deg);
+}
+
+/* A collapsed card shows only its header, which then carries the next arrivals. */
+.favorite.collapsed > :not(.favorite-header, .card-actions) {
+  display: none;
+}
+
+.arrival-summary {
+  display: none;
+}
+
+.collapsed .arrival-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
   color: var(--muted);
   font-size: 11px;
 }
 
-.remove-button:hover {
+.summary-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+}
+
+.summary-time[data-direction="N"] .arrival-direction {
+  background: #126b8a;
+}
+
+.summary-time[data-direction="S"] .arrival-direction {
+  background: #b25428;
+}
+
+.more-button {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 24px;
+  margin: 0 -4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.more-button:hover,
+.more-button[aria-expanded="true"] {
+  background: #e8ece7;
+  color: var(--ink);
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0 32px;
+}
+
+.card-actions[hidden] {
+  display: none;
+}
+
+.card-action {
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.card-action:hover:not(:disabled) {
+  border-color: #bac4bd;
+  background: #f3f4ef;
+}
+
+.card-action:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.card-action.remove-button {
+  margin-left: auto;
   color: #a32929;
 }
 
