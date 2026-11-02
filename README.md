@@ -82,6 +82,7 @@ MTA_BUS_API_KEY=your-key
 1. Build it with `npm run build:extension`.
 2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select this project folder.
 3. After changing the code, run the build again and click the reload button on the extension's card.
+4. To publish a new version, raise `version` in `manifest.json` (and `package.json`), then run `npm run package:extension`. It creates `dist/nyc-transit-tracker-<version>.zip` with only the files the extension needs, ready to upload to the Chrome Web Store. Don't zip the project folder yourself: the store needs `manifest.json` at the top of the zip, and the folder also holds your key file and other private files.
 
 Note that the bus key is built into the extension, so anyone who has a copy of your built extension can find it. Don't share the generated `dist/` folder if you want to keep your key private.
 
