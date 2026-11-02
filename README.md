@@ -1,46 +1,134 @@
 # NYC Transit Tracker
 
-A Chrome extension for tracking realtime arrival predictions for selected NYC subway and bus routes and stops, and PATH train stations.
+Live arrival times and service alerts for the NYC subway, MTA buses and PATH trains, for just the stops you care about. Save your stops once, then check them at a glance.
 
-## Run the extension
+It comes in two forms that work the same way:
 
-1. Install dependencies with `npm install`.
-2. Add your MTA Bus Time API key to the ignored `.dev.vars` file as `MTA_BUS_API_KEY=your-key` (the extension ID is no longer needed).
-3. Build the extension with `npm run build`.
-4. In Chrome, open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**. Select this repository directory.
-5. Use the separate Subway, Bus and PATH tabs to choose a station/stop and route (or, for PATH, a direction), then add it to that mode's tracked list.
+| | Best for | Get it |
+|---|---|---|
+| **Web app** | Your phone on the go, or any browser | [nyc-transit-tracker.iamintisar45.workers.dev](https://nyc-transit-tracker.iamintisar45.workers.dev/) |
+| **Chrome extension** | Your laptop or desktop at work | [Chrome Web Store](https://chromewebstore.google.com/detail/jbafnppnbgdaonfipcolgmhplifahhln) |
 
-## Run the web app (phones and desktop)
+Both are free, need no account, and show no ads.
 
-The same app also runs as an installable web app (PWA), served by a Cloudflare Worker that also proxies the live feeds, since browsers can't call the MTA and PATH feeds directly and the bus API key must stay on the server.
+<p>
+  <img src="./WebAppUI.jpg" alt="The web app on a phone, showing A train arrivals at Jay St-MetroTech" width="260">
+  &nbsp;&nbsp;
+  <img src="./ExtensionUI.png" alt="The Chrome extension popup showing tracked stations, arrival times and a service alert" width="300">
+</p>
 
-1. Put `MTA_BUS_API_KEY=your-key` in `.dev.vars` (the Worker reads it locally as a secret).
-2. Run `npm run dev` and open http://localhost:8787.
-3. Deploy with `npm run deploy` after setting the production key once with `npx wrangler secret put MTA_BUS_API_KEY`.
+## What it does
 
-On a phone, open the deployed URL and choose **Add to Home Screen** (Safari share menu on iPhone, browser menu on Android). Saved stops are kept in that browser. The Worker serves only the feeds listed in `gtfs_subway/` and caches each one for 20 seconds, so users share upstream requests. Platform differences between the two builds live in `src/platform/`; web-only files (styles, service worker, manifest, icons) live in `web/`. Wrangler is pinned to 4.86.0 because later versions need Node 22.
+- **Subway, bus and PATH** in separate tabs.
+- **Save the stops you use.** Search for a station or bus stop and pick a route (or, for PATH, a direction). You can save as many as you like.
+- **Live arrivals** for each saved stop, grouped by direction and destination, showing the next few trains or buses in minutes.
+- **Service alerts** for your route at that stop. Cards with an alert are highlighted, and you can tap the alert to read the details.
+- **Updates on its own** every 30 seconds while it's open, or tap **Refresh** any time.
 
-## Features
+## Use it on your phone
 
-- Use separate Subway and Bus tabs, each with its own stop search, route search, saved stops, and arrival results.
-- Search subway stations or bus stops and routes with relevance-ranked fuzzy matching, then save the combinations you want to track.
-- View realtime arrival predictions grouped by direction and destination.
-- See active service alerts matching each saved route and station/stop. Alerted cards are highlighted; expand an alert to read its description.
-- Track PATH stations by direction (To New York, To New Jersey or both). Arrivals are grouped by destination and colored by line. PATH alerts are not available.
-- Refresh arrivals and service alerts every 30 seconds while the popup is open. Saved stops are stored in your browser.
+1. Open [nyc-transit-tracker.iamintisar45.workers.dev](https://nyc-transit-tracker.iamintisar45.workers.dev/) in your phone's browser.
+2. Add it to your home screen so it opens like an app:
+   - **iPhone:** in Safari, tap the **Share** button, then **Add to Home Screen**.
+   - **Android:** in Chrome, tap the **⋮** menu, then **Install app** or **Add to Home screen**.
+3. Open it from the new icon, choose a tab, and tap **Track a … stop** to add your first stop.
 
-### PATH data
+## Use it on your computer
 
-The Port Authority publishes no official realtime PATH API. The PATH tab reads `https://www.panynj.gov/bin/portauthority/ridepath.json`, the JSON that powers the schedule page on panynj.gov. It needs no key, but it is unofficial and could change or disappear without notice; the tab shows a "may be down" message when the feed fails. The 13 stations and their codes live in `src/path.js`.
+Install the extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/jbafnppnbgdaonfipcolgmhplifahhln). It works in Chrome and in other browsers that accept Chrome Web Store extensions, such as Microsoft Edge and Brave. Click the extension's icon in the toolbar to open it, then add your stops. You can pin the icon from the browser's puzzle-piece menu.
 
-The extension uses subway feeds from `gtfs_subway/realtime_feed_apis.txt` and `gtfs_subway/service_alert_feeds.txt`. Bus route/stop lookup tables in `gtfs_bus/` are compiled from the six public MTA bus GTFS feeds. Bus realtime requests go directly to the MTA Bus Time API.
+Prefer not to install anything? The web app works in any desktop browser too.
 
-### Bus API key
+## Good to know
 
-The build reads `MTA_BUS_API_KEY` from the ignored local `.dev.vars` file and writes the bus feed URLs to ignored `dist/bus-config.js`. The key is not committed, but it is visible to anyone who can inspect or copy a built extension. Do not commit or share the generated `dist/` directory if you want to keep using this key privately. Rebuild after changing the key.
+- **Your saved stops stay on your device.** They aren't uploaded anywhere, so stops saved on your laptop won't appear on your phone. Add them on each device you use.
+- **PATH times come from an unofficial source.** The Port Authority doesn't offer an official live data feed, so the PATH tab reads the data behind its website. It can occasionally be unavailable; the app will say so when it is. PATH service alerts aren't available.
+- **Times are predictions** from the MTA and Port Authority and can change, especially during service disruptions.
+- **Privacy:** no tracking, analytics or personal data. See the [privacy policy](./PRIVACY.md) for details.
 
-Only transit modes with saved station/route combinations are refreshed. If you track subway stops only, the extension requests subway feeds only; bus feeds are fetched only when bus stops are tracked. Refresh runs every 30 seconds while the popup is open and at least one stop is tracked. MTA bus static GTFS data is published quarterly; refresh `gtfs_bus/routes.txt` and `gtfs_bus/stops.txt` from the six official feeds when MTA updates those schedules.
+## Help and feedback
 
-## How It Looks
+Found a bug, see wrong arrivals, or have an idea? [Open an issue on GitHub](https://github.com/Al-Ashir-Intisar/NYCSubwayTracker/issues). The **Support** link at the bottom of the app goes to the same place.
 
-![NYC Transit Tracker extension popup showing tracked stations, arrival predictions, and a service alert](./ExtensionUI.png)
+---
+
+## For developers
+
+This repository holds both versions. They share the same app code; the differences come from how each one is hosted:
+
+- The **Chrome extension** runs in the browser's popup and downloads the transit feeds directly.
+- The **web app** is hosted on [Cloudflare Workers](https://developers.cloudflare.com/workers/). A small Worker serves the app and also acts as a go-between for the transit feeds. Websites, unlike extensions, aren't allowed to request those feeds directly, and the Worker keeps the MTA Bus Time API key off users' devices. It also caches each feed for 20 seconds so many users share one download.
+
+You're welcome to fork it, run your own copy, or adapt it for another city ([MIT license](./LICENSE)).
+
+### What you'll need
+
+- [Node.js](https://nodejs.org/) 20 or newer.
+- A free **MTA Bus Time API key** for bus arrivals, from [register.developer.obanyc.com](https://register.developer.obanyc.com/). Subway and PATH data need no key.
+- A free [Cloudflare account](https://dash.cloudflare.com/sign-up), only if you want to publish your own copy of the web app.
+
+Then install the dependencies and add your key to a file named `.dev.vars` in the project folder. This file is ignored by Git, so it won't be committed.
+
+```bash
+npm install
+```
+
+```
+MTA_BUS_API_KEY=your-key
+```
+
+### Run the extension yourself
+
+1. Build it with `npm run build:extension`.
+2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and select this project folder.
+3. After changing the code, run the build again and click the reload button on the extension's card.
+
+Note that the bus key is built into the extension, so anyone who has a copy of your built extension can find it. Don't share the generated `dist/` folder if you want to keep your key private.
+
+### Run the web app yourself
+
+1. Run `npm run dev` and open <http://localhost:8787>. This runs the app and the Worker together on your computer, using the key from `.dev.vars`.
+2. To publish it, log in to Cloudflare once, publish, then store your bus key on Cloudflare (it asks you to paste the key):
+
+   ```bash
+   npx wrangler login
+   ```
+
+   ```bash
+   npm run deploy
+   ```
+
+   ```bash
+   npx wrangler secret put MTA_BUS_API_KEY
+   ```
+
+   Your app will be at `https://nyc-transit-tracker.<your-subdomain>.workers.dev`. Change `name` in [wrangler.jsonc](./wrangler.jsonc) to pick a different address.
+3. To update it later, run `npm run deploy` again. Phones pick up the new version the next time the app is opened.
+
+Cloudflare's free plan allows 100,000 requests to the Worker per day, which covers a few hundred hours of combined use. Cloudflare's [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) has the details if you need more.
+
+### How the project is organized
+
+| Path | What's in it |
+|---|---|
+| `popup.html`, `popup.css`, `src/popup.js` | The app itself, shared by both versions |
+| `src/path.js` | PATH stations and arrival parsing |
+| `src/platform/` | The few places the two versions differ: where saved stops are stored and how feeds are reached |
+| `web/` | Web-app-only files: phone layout styles, offline support, home screen icon and app details |
+| `worker/index.js` | The Cloudflare Worker that serves the web app and relays the transit feeds |
+| `manifest.json` | The Chrome extension's settings and permissions |
+| `gtfs_subway/`, `gtfs_bus/` | Station, stop and route lists, plus the list of live feeds the app uses |
+| `scripts/build.mjs` | Builds both versions (`npm run build`, or `build:extension` / `build:web`) |
+
+### Where the data comes from
+
+- **Subway:** the MTA's public [GTFS-realtime feeds](https://api.mta.info/) for arrivals and service alerts.
+- **Bus:** [MTA Bus Time](https://bustime.mta.info/wiki/Developers/Index). The web app asks for one stop at a time to keep phone data use low. The extension downloads the citywide feed.
+- **PATH:** the unofficial data behind the schedule page on [panynj.gov](https://www.panynj.gov/path/en/index.html). It could change or disappear without notice.
+
+The station and stop lists in `gtfs_subway/` and `gtfs_bus/` come from the MTA's static schedule data. The MTA updates bus schedules about every three months. When it does, refresh `gtfs_bus/routes.txt` and `gtfs_bus/stops.txt` from the [MTA's published feeds](https://new.mta.info/developers) so new stops and routes show up.
+
+### Things to watch out for
+
+- Wrangler (Cloudflare's command-line tool) is pinned to version 4.86.0 because newer versions need Node.js 22. If you use Node.js 22 or newer, you can upgrade it.
+- The web app's icons are generated by `scripts/make-icons.mjs`. Replace the images in `web/icons/` to use your own.
