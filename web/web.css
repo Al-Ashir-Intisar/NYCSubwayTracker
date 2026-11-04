@@ -169,6 +169,18 @@ label {
   font-size: 14px;
 }
 
+.system-alerts {
+  padding: 12px;
+}
+
+.system-alerts-heading {
+  font-size: 15px;
+}
+
+.system-alerts[data-state="error"] {
+  font-size: 13px;
+}
+
 .popup-footer {
   padding: 14px 18px 18px;
   font-size: 13px;

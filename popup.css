@@ -91,6 +91,50 @@ main {
   display: none;
 }
 
+/* System-wide alerts at the top of a tab (PATH). */
+.system-alerts {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid #e5c46a;
+  border-left: 3px solid #b7791f;
+  border-radius: 3px;
+  background: #fff8e6;
+}
+
+.system-alerts[hidden] {
+  display: none;
+}
+
+.system-alerts[data-state="error"] {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.system-alerts-heading {
+  margin: 0;
+  color: #754b08;
+  font-size: 12px;
+}
+
+.system-alerts .service-alert + .service-alert {
+  margin-top: 0;
+}
+
+.system-alerts .service-alert-label {
+  display: inline;
+}
+
+.system-alerts .service-alert-header {
+  display: block;
+  margin: 2px 0 0 14px;
+  color: #8a6a2a;
+  font-weight: 400;
+}
+
 .selector {
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line);

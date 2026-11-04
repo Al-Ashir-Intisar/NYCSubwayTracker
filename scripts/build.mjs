@@ -1,7 +1,7 @@
 // Builds the Chrome extension (dist/popup.js, loaded from the repo root) and the web app
 // (dist/web/, served by the Worker in worker/index.js). Pass "extension" or "web" to build one.
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { build } from 'esbuild';
 
@@ -9,50 +9,11 @@ const root = process.cwd();
 const targets = process.argv.slice(2);
 const buildAll = !targets.length;
 
-function readBusApiKey() {
-  const envPath = resolve(root, '.dev.vars');
-  const envText = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
-  const apiKey = envText.match(/^MTA_BUS_API_KEY=(.+)$/m)?.[1]?.trim();
-  if (!apiKey) {
-    throw new Error('Set MTA_BUS_API_KEY in the ignored .dev.vars file before building the extension.');
-  }
-  return apiKey;
-}
-
 async function buildExtension() {
-  const apiKey = readBusApiKey();
-  const endpoints = readFileSync(resolve(root, 'gtfs_subway/mta_bus_realtime_feed_apis.txt'), 'utf8')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-  const feeds = {};
-  for (const endpoint of endpoints) {
-    let url;
-    try {
-      url = new URL(endpoint.replaceAll('<YOUR_KEY>', encodeURIComponent(apiKey)));
-    } catch {
-      throw new Error('An MTA bus feed URL is invalid.');
-    }
-    const feedName = url.pathname.split('/').pop();
-    if (url.protocol !== 'https:' || url.hostname !== 'gtfsrt.prod.obanyc.com'
-      || !['tripUpdates', 'alerts'].includes(feedName)) {
-      throw new Error('The MTA bus feed list contains an unsupported endpoint.');
-    }
-    url.searchParams.set('key', apiKey);
-    feeds[feedName] = url.href;
-  }
-  for (const requiredFeed of ['tripUpdates', 'alerts']) {
-    if (!feeds[requiredFeed]) {
-      throw new Error(`The MTA bus feed list is missing ${requiredFeed}.`);
-    }
-  }
-
   const outputDirectory = resolve(root, 'dist');
   mkdirSync(outputDirectory, { recursive: true });
-  writeFileSync(
-    resolve(outputDirectory, 'bus-config.js'),
-    `globalThis.NYC_BUS_FEED_URLS = ${JSON.stringify(feeds)};\n`
-  );
+  // Older builds wrote the bus API key here; the extension now gets bus data from the Worker.
+  rmSync(resolve(outputDirectory, 'bus-config.js'), { force: true });
 
   await build({
     entryPoints: [resolve(root, 'src/popup.js')],
@@ -127,7 +88,7 @@ async function buildWeb() {
   const indexHtml = popupHtml
     .replace('content="width=device-width, initial-scale=1"', 'content="width=device-width, initial-scale=1, viewport-fit=cover"')
     .replace(/\s*<link rel="stylesheet" href="popup.css">/, WEB_HEAD)
-    .replace(/<script src="dist\/bus-config.js"><\/script>\s*<script src="dist\/popup.js"><\/script>/, WEB_SCRIPTS);
+    .replace('<script src="dist/popup.js"></script>', WEB_SCRIPTS);
   if (indexHtml.includes('dist/popup.js') || !indexHtml.includes('manifest.webmanifest')) {
     throw new Error('popup.html no longer matches what the web build expects.');
   }
