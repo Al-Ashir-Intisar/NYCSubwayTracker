@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NYC Transit Tracker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Track realtime arrivals and service alerts for NYC subway and bus stops, plus PATH train arrivals.",
   "homepage_url": "https://github.com/Al-Ashir-Intisar/NYCSubwayTracker",
   "action": {
@@ -11,7 +11,7 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://api-endpoint.mta.info/*",
-    "https://gtfsrt.prod.obanyc.com/*",
-    "https://www.panynj.gov/bin/portauthority/*"
+    "https://www.panynj.gov/bin/portauthority/*",
+    "https://nyc-transit-tracker.iamintisar45.workers.dev/api/*"
   ]
 }

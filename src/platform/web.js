@@ -2,6 +2,10 @@
 // feeds go through the Worker proxy in worker/index.js.
 const MTA_FEED_PREFIX = '/Dataservice/mtagtfsfeeds/';
 
+export function apiUrl(path) {
+  return path;
+}
+
 export function assetUrl(path) {
   return path;
 }
@@ -12,17 +16,10 @@ export function feedUrl(url) {
   if (parsed.hostname === 'api-endpoint.mta.info' && parsed.pathname.startsWith(MTA_FEED_PREFIX)) {
     return `/api/mta/${parsed.pathname.slice(MTA_FEED_PREFIX.length)}`;
   }
-  if (parsed.hostname === 'www.panynj.gov') return '/api/path';
+  if (parsed.hostname === 'www.panynj.gov') {
+    return parsed.pathname.endsWith('/alerts') ? '/api/path-alerts' : '/api/path';
+  }
   throw new Error('This feed is not available in the web app.');
-}
-
-export function busFeedUrls() {
-  return { alerts: '/api/bus/alerts' };
-}
-
-// Bus predictions for one stop and line; the citywide trip-updates feed is too big for phones.
-export function busStopMonitoringUrl(stopId, lineRef) {
-  return `/api/bus/stop-monitoring?${new URLSearchParams({ stop: stopId, line: lineRef })}`;
 }
 
 // localStorage can throw (private browsing, blocked storage); saved stops then last only

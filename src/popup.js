@@ -1,10 +1,12 @@
 import * as GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import Fuse from 'fuse.js';
 import { Reader } from 'protobufjs/minimal';
-import { PATH_FEED_URL, buildPathData, findPathArrivals } from './path.js';
+import {
+  PATH_ALERTS_URL, PATH_FEED_URL, buildPathData, findPathAlerts, findPathArrivals
+} from './path.js';
 // Resolved by the build to src/platform/extension.js or src/platform/web.js.
 import {
-  assetUrl, feedUrl, busFeedUrls as configuredBusFeedUrls, busStopMonitoringUrl, storage
+  apiUrl, assetUrl, feedUrl, storage
 } from 'platform';
 
 const SUBWAY_FAVORITES_KEY = 'trackedSubwayStops';
@@ -97,7 +99,6 @@ const views = {
 };
 
 let feedUrlsByGroup = new Map();
-let busFeedUrls = {};
 let serviceAlertFeedUrls = [];
 const favoritesByMode = { subway: [], bus: [], path: [] };
 const loadingModes = new Set();
@@ -222,10 +223,6 @@ async function loadBusData() {
     loadText(BUS_STOPS_PATH),
     loadText(BUS_ROUTES_PATH)
   ]);
-  busFeedUrls = configuredBusFeedUrls();
-  if ((!busStopMonitoringUrl && !busFeedUrls.tripUpdates) || !busFeedUrls.alerts) {
-    throw new Error('Bus API key configuration is missing. Set MTA_BUS_API_KEY in .dev.vars and run npm run build.');
-  }
   return buildBusData(stopsText, routesText);
 }
 
@@ -719,35 +716,22 @@ async function fetchServiceAlerts() {
     }]))).values()];
 }
 
-async function fetchBusFeed(feedName, feedCache) {
-  const cacheKey = `bus:${feedName}`;
-  if (feedCache.has(cacheKey)) return feedCache.get(cacheKey);
-  const url = busFeedUrls[feedName];
-  if (!url) throw new Error(`No MTA bus feed is configured for ${feedName}.`);
-
-  const request = (async () => {
-    const response = await fetchFeedResponse(url, 'Bus data');
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    return GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(bytes);
-  })();
-  feedCache.set(cacheKey, request);
-  return request;
-}
-
+// Bus feeds need the MTA Bus Time API key, which only the Worker has. Predictions are asked
+// for one stop and line at a time; the citywide trip-updates feed is several MB.
 async function fetchBusStopMonitoring(favorite) {
   const route = views.bus.data.routesById.get(favorite.routeId);
-  const response = await fetchFeedResponse(
-    busStopMonitoringUrl(favorite.stationId, `${route?.agency_id || 'MTA NYCT'}_${favorite.routeId}`),
-    'Bus data'
-  );
+  const query = new URLSearchParams({
+    stop: favorite.stationId,
+    line: `${route?.agency_id || 'MTA NYCT'}_${favorite.routeId}`
+  });
+  const response = await fetchFeedResponse(apiUrl(`/api/bus/stop-monitoring?${query}`), 'Bus data');
   const delivery = (await response.json()).Siri?.ServiceDelivery?.StopMonitoringDelivery?.[0];
   const error = delivery?.ErrorCondition?.Description;
   if (error) throw new Error(error);
   return delivery?.MonitoredStopVisit || [];
 }
 
-// Only predicted times count; visits with just a scheduled (aimed) time are left out, as in
-// the GTFS trip-updates feed.
+// Only predicted times count; visits with just a scheduled (aimed) time are left out.
 function findStopMonitoringArrivals(visits) {
   const now = Date.now() / 1000;
   return visits.map((visit) => {
@@ -783,8 +767,9 @@ async function fetchPathFeed(feedCache) {
   return request;
 }
 
-async function fetchBusAlerts(feedCache) {
-  const feed = await fetchBusFeed('alerts', feedCache);
+async function fetchBusAlerts() {
+  const response = await fetchFeedResponse(apiUrl('/api/bus/alerts'), 'Bus alerts');
+  const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(await response.arrayBuffer()));
   return (feed.entity || []).filter((entity) => entity.alert).map((entity) => ({
     ...entity.alert,
     id: entity.id
@@ -897,8 +882,8 @@ function buildAlertList(className, alerts, expandedAlertIds, labelText) {
   return container;
 }
 
-function findTransitArrivals(feed, favorite, mode) {
-  const data = views[mode].data;
+function findSubwayArrivals(feed, favorite) {
+  const data = views.subway.data;
   const stationStopIds = data?.stopsByStation.get(favorite.stationId) || new Set([favorite.stationId]);
   const selectedRouteId = canonicalRoute(favorite.routeId);
   const now = Date.now() / 1000;
@@ -917,9 +902,7 @@ function findTransitArrivals(feed, favorite, mode) {
       if (stopUpdate.scheduleRelationship === 1) continue;
       const epoch = getEpochSeconds(stopUpdate.arrival?.time ?? stopUpdate.departure?.time);
       if (!Number.isFinite(epoch) || epoch < now - 30 || epoch > now + 2 * 60 * 60) continue;
-      const direction = mode === 'subway'
-        ? stopUpdate.stopId.endsWith('N') ? 'N' : stopUpdate.stopId.endsWith('S') ? 'S' : ''
-        : '';
+      const direction = stopUpdate.stopId.endsWith('N') ? 'N' : stopUpdate.stopId.endsWith('S') ? 'S' : '';
       arrivals.push({
         epoch,
         tripId: update.trip?.tripId || entity.id,
@@ -935,14 +918,6 @@ function findTransitArrivals(feed, favorite, mode) {
     uniqueArrivals.set(`${arrival.tripId}:${arrival.epoch}:${arrival.stopId}`, arrival);
   }
   return [...uniqueArrivals.values()].sort((left, right) => left.epoch - right.epoch);
-}
-
-function findSubwayArrivals(feed, favorite) {
-  return findTransitArrivals(feed, favorite, 'subway');
-}
-
-function findBusArrivals(feed, favorite) {
-  return findTransitArrivals(feed, favorite, 'bus');
 }
 
 // Black or white, whichever reads better on a line color (WCAG contrast).
@@ -1101,22 +1076,80 @@ function refreshBus() {
   return refreshView(
     views.bus,
     fetchBusAlerts,
-    (favorite, feedCache) => (busStopMonitoringUrl
-      ? fetchBusStopMonitoring(favorite)
-      : fetchBusFeed('tripUpdates', feedCache)),
+    fetchBusStopMonitoring,
     findBusServiceAlerts,
-    busStopMonitoringUrl ? findStopMonitoringArrivals : findBusArrivals
+    findStopMonitoringArrivals
   );
 }
 
-function refreshPath() {
-  return refreshView(
-    views.path,
-    async () => [],
-    (_favorite, feedCache) => fetchPathFeed(feedCache),
-    () => [],
-    (feed, favorite) => findPathArrivals(feed, favorite)
+// PATH alerts are free text about the whole system, so they get one panel at the top of the
+// PATH tab instead of being matched to station cards.
+const pathAlertsPanel = document.querySelector('#path-alerts');
+
+async function refreshPathAlerts() {
+  let alerts = null;
+  try {
+    const response = await fetchFeedResponse(PATH_ALERTS_URL, 'PATH alerts');
+    alerts = findPathAlerts(await response.json());
+  } catch {
+    // Shown as "unavailable" below; the feed is unofficial, like the arrivals.
+  }
+  renderPathAlerts(alerts);
+}
+
+function renderPathAlerts(alerts) {
+  const expandedAlertIds = new Set(
+    [...pathAlertsPanel.querySelectorAll('.service-alert[open]')].map((item) => item.dataset.alertId)
   );
+  pathAlertsPanel.replaceChildren();
+  pathAlertsPanel.hidden = alerts !== null && !alerts.length;
+  if (!alerts) {
+    pathAlertsPanel.dataset.state = 'error';
+    pathAlertsPanel.textContent = 'PATH alerts are unavailable right now.';
+    return;
+  }
+  pathAlertsPanel.dataset.state = 'alerts';
+
+  const heading = document.createElement('h2');
+  heading.className = 'system-alerts-heading';
+  heading.textContent = alerts.length === 1 ? 'PATH alert' : `${alerts.length} PATH alerts`;
+  pathAlertsPanel.append(heading);
+  for (const alert of alerts) {
+    const details = document.createElement('details');
+    details.className = 'service-alert';
+    details.dataset.alertId = alert.id;
+    details.open = expandedAlertIds.has(alert.id);
+
+    const summary = document.createElement('summary');
+    const label = document.createElement('span');
+    label.className = 'service-alert-label';
+    label.textContent = alert.title;
+    const time = document.createElement('span');
+    time.className = 'service-alert-header';
+    time.textContent = `Updated ${new Date(alert.sentAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    summary.append(label, time);
+
+    const description = document.createElement('p');
+    description.className = 'service-alert-description';
+    description.textContent = toPlainText(alert.message)
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n') || 'No additional details provided.';
+    details.append(summary, description);
+    pathAlertsPanel.append(details);
+  }
+}
+
+function refreshPath() {
+  return Promise.all([
+    refreshPathAlerts(),
+    refreshView(
+      views.path,
+      async () => [],
+      (_favorite, feedCache) => fetchPathFeed(feedCache),
+      () => [],
+      (feed, favorite) => findPathArrivals(feed, favorite)
+    )
+  ]);
 }
 
 const refreshers = { subway: refreshSubway, bus: refreshBus, path: refreshPath };
@@ -1205,6 +1238,7 @@ async function loadModeData(mode) {
     initializeView(mode);
     renderFavorites(mode);
     if (favoritesByMode[mode].length) refreshMode(mode);
+    else if (mode === 'path') refreshPathAlerts();
   } catch (error) {
     view.loadStatus.dataset.error = 'true';
     view.loadStatus.textContent = error instanceof Error

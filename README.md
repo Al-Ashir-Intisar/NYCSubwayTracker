@@ -22,7 +22,7 @@ Both are free, need no account, and show no ads.
 - **Subway, bus and PATH** in separate tabs.
 - **Save the stops you use.** Search for a station or bus stop and pick a route (or, for PATH, a direction). You can save as many as you like.
 - **Live arrivals** for each saved stop, grouped by direction and destination, showing the next few trains or buses in minutes.
-- **Service alerts** for your route at that stop. Cards with an alert are highlighted, and you can tap the alert to read the details.
+- **Service alerts** for your route at that stop. Cards with an alert are highlighted, and you can tap the alert to read the details. PATH alerts (delays, elevator outages, travel advisories) cover the whole system, so they appear together at the top of the PATH tab.
 - **Updates on its own** every 30 seconds while it's open, or tap **Refresh** any time.
 
 ## Use it on your phone
@@ -42,7 +42,7 @@ Prefer not to install anything? The web app works in any desktop browser too.
 ## Good to know
 
 - **Your saved stops stay on your device.** They aren't uploaded anywhere, so stops saved on your laptop won't appear on your phone. Add them on each device you use.
-- **PATH times come from an unofficial source.** The Port Authority doesn't offer an official live data feed, so the PATH tab reads the data behind its website. It can occasionally be unavailable; the app will say so when it is. PATH service alerts aren't available.
+- **PATH times come from an unofficial source.** The Port Authority doesn't offer an official live data feed, so the PATH tab reads the data behind its website. PATH alerts come from the same website. Either can occasionally be unavailable; the app will say so when it is.
 - **Times are predictions** from the MTA and Port Authority and can change, especially during service disruptions.
 - **Privacy:** no tracking, analytics or personal data. See the [privacy policy](./PRIVACY.md) for details.
 
@@ -56,8 +56,10 @@ Found a bug, see wrong arrivals, or have an idea? [Open an issue on GitHub](http
 
 This repository holds both versions. They share the same app code; the differences come from how each one is hosted:
 
-- The **Chrome extension** runs in the browser's popup and downloads the transit feeds directly.
-- The **web app** is hosted on [Cloudflare Workers](https://developers.cloudflare.com/workers/). A small Worker serves the app and also acts as a go-between for the transit feeds. Websites, unlike extensions, aren't allowed to request those feeds directly, and the Worker keeps the MTA Bus Time API key off users' devices. It also caches each feed for 20 seconds so many users share one download.
+- The **web app** is hosted on [Cloudflare Workers](https://developers.cloudflare.com/workers/). A small Worker serves the app and also acts as a go-between for the transit feeds, because websites, unlike extensions, aren't allowed to request those feeds directly. It caches each feed for 20 seconds so many users share one download.
+- The **Chrome extension** runs in the browser's popup. It downloads the subway and PATH feeds directly, and gets bus data from the same Worker.
+
+Bus data needs an MTA Bus Time API key, and only the Worker holds it, so the key never ships to anyone's device.
 
 You're welcome to fork it, run your own copy, or adapt it for another city ([MIT license](./LICENSE)).
 
@@ -65,9 +67,9 @@ You're welcome to fork it, run your own copy, or adapt it for another city ([MIT
 
 - [Node.js](https://nodejs.org/) 20 or newer.
 - A free **MTA Bus Time API key** for bus arrivals, from [register.developer.obanyc.com](https://register.developer.obanyc.com/). Subway and PATH data need no key.
-- A free [Cloudflare account](https://dash.cloudflare.com/sign-up), only if you want to publish your own copy of the web app.
+- A free [Cloudflare account](https://dash.cloudflare.com/sign-up) to publish your own Worker. Both versions get bus data from it.
 
-Then install the dependencies and add your key to a file named `.dev.vars` in the project folder. This file is ignored by Git, so it won't be committed.
+Then install the dependencies and add your key to a file named `.dev.vars` in the project folder, which the Worker uses when it runs on your computer. This file is ignored by Git, so it won't be committed.
 
 ```bash
 npm install
@@ -84,7 +86,7 @@ MTA_BUS_API_KEY=your-key
 3. After changing the code, run the build again and click the reload button on the extension's card.
 4. To publish a new version, raise `version` in `manifest.json` (and `package.json`), then run `npm run package:extension`. It creates `dist/nyc-transit-tracker-<version>.zip` with only the files the extension needs, ready to upload to the Chrome Web Store. Don't zip the project folder yourself: the store needs `manifest.json` at the top of the zip, and the folder also holds your key file and other private files.
 
-Note that the bus key is built into the extension, so anyone who has a copy of your built extension can find it. Don't share the generated `dist/` folder if you want to keep your key private.
+The extension's bus tab uses the Worker published from this repository. To use your own, publish the web app (below), then put its address in `WORKER_ORIGIN` in [src/platform/extension.js](./src/platform/extension.js) and in the last `host_permissions` entry in `manifest.json`.
 
 ### Run the web app yourself
 
@@ -124,8 +126,8 @@ Cloudflare's free plan allows 100,000 requests to the Worker per day, which cove
 ### Where the data comes from
 
 - **Subway:** the MTA's public [GTFS-realtime feeds](https://api.mta.info/) for arrivals and service alerts.
-- **Bus:** [MTA Bus Time](https://bustime.mta.info/wiki/Developers/Index). The web app asks for one stop at a time to keep phone data use low. The extension downloads the citywide feed.
-- **PATH:** the unofficial data behind the schedule page on [panynj.gov](https://www.panynj.gov/path/en/index.html). It could change or disappear without notice.
+- **Bus:** [MTA Bus Time](https://bustime.mta.info/wiki/Developers/Index), through the Worker. Arrivals are requested one stop at a time to keep data use low.
+- **PATH:** the unofficial data behind the schedule and alerts pages on [panynj.gov](https://www.panynj.gov/path/en/index.html). The alerts are free-text messages from the last 8 hours with no station or line tags, so the app shows them for the whole system rather than per station. Both could change or disappear without notice.
 
 The station and stop lists in `gtfs_subway/` and `gtfs_bus/` come from the MTA's static schedule data. The MTA updates bus schedules about every three months. When it does, refresh `gtfs_bus/routes.txt` and `gtfs_bus/stops.txt` from the [MTA's published feeds](https://new.mta.info/developers) so new stops and routes show up.
 

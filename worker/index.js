@@ -3,7 +3,7 @@
 import subwayFeedList from '../gtfs_subway/realtime_feed_apis.txt';
 import alertFeedList from '../gtfs_subway/service_alert_feeds.txt';
 import busFeedList from '../gtfs_subway/mta_bus_realtime_feed_apis.txt';
-import { PATH_FEED_URL } from '../src/path.js';
+import { PATH_ALERTS_URL, PATH_FEED_URL } from '../src/path.js';
 
 const MTA_FEED_PREFIX = '/Dataservice/mtagtfsfeeds/';
 // Per-stop bus predictions (SIRI). The citywide GTFS trip-updates feed is several MB, too
@@ -31,6 +31,7 @@ const busFeeds = new Map(feedUrls(busFeedList)
 
 function upstreamUrl(pathname, searchParams, env) {
   if (pathname === '/api/path') return PATH_FEED_URL;
+  if (pathname === '/api/path-alerts') return PATH_ALERTS_URL;
   if (pathname === '/api/bus/stop-monitoring') {
     const stop = searchParams.get('stop') || '';
     const line = searchParams.get('line') || '';

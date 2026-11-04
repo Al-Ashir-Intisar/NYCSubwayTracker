@@ -1,7 +1,6 @@
 // Zips the built extension for the Chrome Web Store: only the files the extension loads, with
 // manifest.json at the root of the zip. Run through `npm run package:extension`, which builds
-// first. The output (dist/nyc-transit-tracker-<version>.zip) contains the bus API key from the
-// build, so upload it only to the store.
+// first. The output is dist/nyc-transit-tracker-<version>.zip.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -12,7 +11,6 @@ const EXTENSION_FILES = [
   'popup.html',
   'popup.css',
   'dist/popup.js',
-  'dist/bus-config.js',
   'gtfs_subway/stops.txt',
   'gtfs_subway/routes.txt',
   'gtfs_subway/realtime_feed_apis.txt',

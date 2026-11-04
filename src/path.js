@@ -2,6 +2,9 @@
 // panynj.gov. It is unofficial and can change or go away without notice, so callers must
 // treat every failure as expected.
 export const PATH_FEED_URL = 'https://www.panynj.gov/bin/portauthority/ridepath.json';
+// The PATH alerts page reads this (Everbridge messages from the last 8 hours). Alerts are free
+// text with no station or line tags, so they are shown for the whole system.
+export const PATH_ALERTS_URL = 'https://www.panynj.gov/bin/portauthority/alerts?agency=PATH&hours=8';
 
 const PATH_COLOR = '0F5FA8';
 const PATH_STATIONS = [
@@ -65,4 +68,30 @@ export function findPathArrivals(feed, favorite, fetchedAt = Date.now()) {
     }
   }
   return arrivals.sort((left, right) => left.epoch - right.epoch);
+}
+
+// Each incident is a thread of messages sharing an ebid; keep only the latest message of each,
+// and drop incidents whose latest message is the "Final Update" (resolved). The feed's own
+// state field says "Closed" even for ongoing outages, so it isn't used. Advisories are also
+// re-sent as new incidents every hour or so, so alerts with the same title are merged too.
+export function findPathAlerts(messages) {
+  const latest = new Map();
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const sentAt = Number(String(message?.sentdate2 || '').match(/\d+/)?.[0]);
+    if (!message?.Subject || !Number.isFinite(sentAt)) continue;
+    const id = String(message.ebid ?? message.messageid);
+    if (!latest.has(id) || latest.get(id).sentAt < sentAt) latest.set(id, { ...message, sentAt });
+  }
+  return [...latest.entries()]
+    .filter(([, message]) => !/final update/i.test(message.Subject))
+    .map(([id, message]) => ({
+      id,
+      sentAt: message.sentAt,
+      title: message.Subject.replace(/^PATHAlert\s*(Final\s+)?(Update)?\s*:\s*/i, '').trim() || 'PATH alert',
+      message: String(message.SentMessage || '')
+    }))
+    .sort((left, right) => right.sentAt - left.sentAt)
+    .filter((alert, index, alerts) => alerts.findIndex((other) => (
+      other.title.toLowerCase() === alert.title.toLowerCase()
+    )) === index);
 }
