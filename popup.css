@@ -120,6 +120,39 @@ main {
   font-size: 12px;
 }
 
+.system-alerts-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.system-alerts-toggle .card-chevron {
+  margin: 4px 4px 0;
+  border-color: #8a6a2a;
+}
+
+.system-alerts.collapsed .card-chevron {
+  margin-top: -3px;
+}
+
+.system-alerts-list {
+  display: grid;
+  gap: 6px;
+}
+
+.system-alerts.collapsed .system-alerts-list {
+  display: none;
+}
+
 .system-alerts .service-alert + .service-alert {
   margin-top: 0;
 }

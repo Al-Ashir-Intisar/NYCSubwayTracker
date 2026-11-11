@@ -18,6 +18,8 @@ const FAVORITES_KEYS = {
   path: PATH_FAVORITES_KEY
 };
 const LEGACY_FAVORITES_KEY = 'trackedStops';
+const LAST_MODE_KEY = 'lastTab';
+const PATH_ALERTS_COLLAPSED_KEY = 'pathAlertsCollapsed';
 const FEEDS_PATH = 'gtfs_subway/realtime_feed_apis.txt';
 const SERVICE_ALERT_FEEDS_PATH = 'gtfs_subway/service_alert_feeds.txt';
 const STOPS_PATH = 'gtfs_subway/stops.txt';
@@ -1085,8 +1087,13 @@ function refreshBus() {
 // PATH alerts are free text about the whole system, so they get one panel at the top of the
 // PATH tab instead of being matched to station cards.
 const pathAlertsPanel = document.querySelector('#path-alerts');
+const pathAlertsStateLoaded = storage.get([PATH_ALERTS_COLLAPSED_KEY]).then((values) => {
+  const titles = values[PATH_ALERTS_COLLAPSED_KEY];
+  if (Array.isArray(titles)) collapsedPathAlertTitles = titles;
+}, () => {});
 
 async function refreshPathAlerts() {
+  await pathAlertsStateLoaded;
   let alerts = null;
   try {
     const response = await fetchFeedResponse(PATH_ALERTS_URL, 'PATH alerts');
@@ -1097,23 +1104,62 @@ async function refreshPathAlerts() {
   renderPathAlerts(alerts);
 }
 
+// The panel can be collapsed to its "N PATH alerts" heading. The titles that were showing
+// when it was collapsed are saved, so it stays collapsed next time but opens again when an
+// alert the user has not seen appears.
+let collapsedPathAlertTitles = null;
+let shownPathAlerts = [];
+const pathAlertKey = (alert) => alert.title.toLowerCase();
+
+function setPathAlertsCollapsed(collapsed) {
+  collapsedPathAlertTitles = collapsed ? shownPathAlerts.map(pathAlertKey) : null;
+  if (collapsed) storage.set({ [PATH_ALERTS_COLLAPSED_KEY]: collapsedPathAlertTitles });
+  else storage.remove(PATH_ALERTS_COLLAPSED_KEY);
+  pathAlertsPanel.classList.toggle('collapsed', collapsed);
+  pathAlertsPanel.querySelector('.system-alerts-toggle')?.setAttribute('aria-expanded', String(!collapsed));
+}
+
 function renderPathAlerts(alerts) {
   const expandedAlertIds = new Set(
     [...pathAlertsPanel.querySelectorAll('.service-alert[open]')].map((item) => item.dataset.alertId)
   );
+  const hadFocus = pathAlertsPanel.querySelector('.system-alerts-toggle') === document.activeElement;
   pathAlertsPanel.replaceChildren();
   pathAlertsPanel.hidden = alerts !== null && !alerts.length;
+  shownPathAlerts = alerts || [];
   if (!alerts) {
     pathAlertsPanel.dataset.state = 'error';
+    pathAlertsPanel.classList.remove('collapsed');
     pathAlertsPanel.textContent = 'PATH alerts are unavailable right now.';
     return;
   }
   pathAlertsPanel.dataset.state = 'alerts';
+  const collapsed = Boolean(collapsedPathAlertTitles)
+    && alerts.every((alert) => collapsedPathAlertTitles.includes(pathAlertKey(alert)));
+  pathAlertsPanel.classList.toggle('collapsed', collapsed);
 
   const heading = document.createElement('h2');
   heading.className = 'system-alerts-heading';
-  heading.textContent = alerts.length === 1 ? 'PATH alert' : `${alerts.length} PATH alerts`;
-  pathAlertsPanel.append(heading);
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'system-alerts-toggle';
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.setAttribute('aria-controls', 'path-alerts-list');
+  const count = document.createElement('span');
+  count.textContent = alerts.length === 1 ? '1 PATH alert' : `${alerts.length} PATH alerts`;
+  const chevron = document.createElement('span');
+  chevron.className = 'card-chevron';
+  chevron.setAttribute('aria-hidden', 'true');
+  toggle.append(count, chevron);
+  toggle.addEventListener('click', () => {
+    setPathAlertsCollapsed(!pathAlertsPanel.classList.contains('collapsed'));
+  });
+  heading.append(toggle);
+  const list = document.createElement('div');
+  list.id = 'path-alerts-list';
+  list.className = 'system-alerts-list';
+  pathAlertsPanel.append(heading, list);
+  if (hadFocus) toggle.focus();
   for (const alert of alerts) {
     const details = document.createElement('details');
     details.className = 'service-alert';
@@ -1135,7 +1181,7 @@ function renderPathAlerts(alerts) {
       .replace(/[ \t]+\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n') || 'No additional details provided.';
     details.append(summary, description);
-    pathAlertsPanel.append(details);
+    list.append(details);
   }
 }
 
@@ -1164,13 +1210,18 @@ function refreshTrackedModes() {
   )));
 }
 
-function selectMode(mode) {
+function showMode(mode) {
   for (const [viewMode, view] of Object.entries(views)) {
     const selected = viewMode === mode;
     view.panel.hidden = !selected;
     view.tab.setAttribute('aria-selected', String(selected));
     view.tab.tabIndex = selected ? 0 : -1;
   }
+}
+
+function selectMode(mode) {
+  showMode(mode);
+  storage.set({ [LAST_MODE_KEY]: mode });
   if (!views[mode].data) {
     loadModeData(mode);
   } else {
@@ -1249,6 +1300,11 @@ async function loadModeData(mode) {
     loadingModes.delete(mode);
   }
 }
+
+// Open on the tab that was showing last time.
+storage.get([LAST_MODE_KEY]).then((values) => {
+  if (views[values[LAST_MODE_KEY]]) showMode(values[LAST_MODE_KEY]);
+}, () => {});
 
 Promise.allSettled([
   loadModeData('subway'),
