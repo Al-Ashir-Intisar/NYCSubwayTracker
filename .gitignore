@@ -4,3 +4,4 @@ dist/
 .env
 .wrangler/
 .DS_Store
+node_download.sh
